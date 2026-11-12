@@ -370,14 +370,18 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
         ):
             company = data["company"]
             account = data["default_account_revenue"]
-            discount = self.env["global.discount"].with_company(company).create(
-                {
-                    "name": "Customer discount " + company.name,
-                    "company_id": company.id,
-                    "discount_scope": "sale",
-                    "discount": rate,
-                    "account_id": account.id,
-                }
+            discount = (
+                self.env["global.discount"]
+                .with_company(company)
+                .create(
+                    {
+                        "name": "Customer discount " + company.name,
+                        "company_id": company.id,
+                        "discount_scope": "sale",
+                        "discount": rate,
+                        "account_id": account.id,
+                    }
+                )
             )
             discounts |= discount
             cases.append((company, account, discount, untaxed, total))
@@ -385,32 +389,40 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
         self.assertEqual(partner.customer_global_discount_ids, discounts)
         for company, account, discount, untaxed, total in cases:
             with self.subTest(company=company.name):
-                tax = self.env["account.tax"].with_company(company).create(
-                    {
-                        "name": "Company discount tax",
-                        "company_id": company.id,
-                        "type_tax_use": "sale",
-                        "amount_type": "percent",
-                        "amount": 15,
-                    }
+                tax = (
+                    self.env["account.tax"]
+                    .with_company(company)
+                    .create(
+                        {
+                            "name": "Company discount tax",
+                            "company_id": company.id,
+                            "type_tax_use": "sale",
+                            "amount_type": "percent",
+                            "amount": 15,
+                        }
+                    )
                 )
-                invoice = self.env["account.move"].with_company(company).create(
-                    {
-                        "move_type": "out_invoice",
-                        "partner_id": partner.id,
-                        "invoice_date": "2026-01-15",
-                        "invoice_line_ids": [
-                            Command.create(
-                                {
-                                    "name": "Company service",
-                                    "account_id": account.id,
-                                    "quantity": 1,
-                                    "price_unit": 200,
-                                    "tax_ids": [Command.set(tax.ids)],
-                                }
-                            )
-                        ],
-                    }
+                invoice = (
+                    self.env["account.move"]
+                    .with_company(company)
+                    .create(
+                        {
+                            "move_type": "out_invoice",
+                            "partner_id": partner.id,
+                            "invoice_date": "2026-01-15",
+                            "invoice_line_ids": [
+                                Command.create(
+                                    {
+                                        "name": "Company service",
+                                        "account_id": account.id,
+                                        "quantity": 1,
+                                        "price_unit": 200,
+                                        "tax_ids": [Command.set(tax.ids)],
+                                    }
+                                )
+                            ],
+                        }
+                    )
                 )
                 self.assertEqual(invoice.company_id, company)
                 self.assertEqual(invoice.global_discount_ids, discount)
