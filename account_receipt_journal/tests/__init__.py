@@ -1,1 +1,1 @@
-from . import test_receipts
+from . import test_receipt_migration, test_receipts

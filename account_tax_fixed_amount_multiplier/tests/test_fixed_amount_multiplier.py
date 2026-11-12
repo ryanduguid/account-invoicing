@@ -111,6 +111,22 @@ class TestFixedAmountMultiplier(AccountTestInvoicingCommon):
             self._get_tax_amount(invoice, self.tax_multiplier_quantity), 50.0, places=2
         )
 
+    def test_default_quantity_hook_ignores_product_conversion_and_weight(self):
+        """The documented extension hook preserves the default line quantity."""
+        for quantity in (0, 2.5, -3):
+            with self.subTest(quantity=quantity):
+                evaluation_context = {
+                    "quantity": quantity,
+                    "uom": {"factor": 12},
+                    "product": {"uom_factor": 2, "weight": 4},
+                }
+                self.assertEqual(
+                    self.tax_multiplier_quantity._get_fixed_amount_quantity(
+                        evaluation_context
+                    ),
+                    quantity,
+                )
+
     # -------------------------------------------------------------------------
     # Multiplier = 'product_quantity' (UoM conversion)
     # -------------------------------------------------------------------------
