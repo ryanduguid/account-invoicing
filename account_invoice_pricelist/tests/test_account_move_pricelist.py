@@ -455,3 +455,20 @@ class TestAccountMovePricelist(common.TransactionCase):
         self.invoice.invoice_line_ids[0].quantity = 0.0
         self.invoice.invoice_line_ids[0].quantity = 1.0
         self.assertEqual(self.invoice.invoice_line_ids[0].discount, 0)
+
+    def test_percentage_rule_on_a_free_product_keeps_zero_price_and_discount(self):
+        self.env.user.group_ids |= self.group_discount
+        self.product.write({"list_price": 0, "taxes_id": [Command.clear()]})
+        self.invoice.pricelist_id = self.sale_pricelist_with_discount
+        self.invoice.invoice_line_ids.tax_ids = False
+        self.invoice.button_update_prices_from_pricelist()
+        rule = self.sale_pricelist_with_discount.item_ids
+        self.assertEqual(rule.compute_price, "percentage")
+        self.assertEqual(rule.percent_price, 10)
+        for line in self.invoice.invoice_line_ids:
+            self.assertEqual(line.pricelist_item_id, rule)
+            self.assertEqual(line.product_id.list_price, 0)
+            self.assertEqual(line.price_unit, 0)
+            self.assertEqual(line.discount, 0)
+            self.assertEqual(line.price_subtotal, 0)
+        self.assertEqual(self.invoice.amount_total, 0)
