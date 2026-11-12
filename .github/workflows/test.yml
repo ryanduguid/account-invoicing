@@ -15,6 +15,8 @@ jobs:
     name: Detect unreleased dependencies
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: |
           for reqfile in requirements.txt test-requirements.txt ; do
               if [ -f ${reqfile} ] ; then
@@ -29,6 +31,9 @@ jobs:
           done
   test:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
     container: ${{ matrix.container }}
     name: ${{ matrix.name }}
     strategy:
@@ -87,12 +92,13 @@ jobs:
         uses: actions/upload-artifact@v4
         if: ${{ failure() }}
         with:
-          name: Screenshots of failed JS tests - ${{ matrix.name }}${{ join(matrix.include) }}
+          name: Screenshots of failed JS tests - ${{ matrix.name }}${{ matrix.include }}
           path: /tmp/odoo_tests/${{ env.PGDATABASE }}
           if-no-files-found: ignore
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          fail_ci_if_error: true
       - name: Update .pot files
         run: oca_export_and_push_pot https://x-access-token:${{ secrets.GIT_PUSH_TOKEN }}@github.com/${{ github.repository }}
         if: ${{ matrix.makepot == 'true' && github.event_name == 'push' && github.repository_owner == 'OCA' }}
