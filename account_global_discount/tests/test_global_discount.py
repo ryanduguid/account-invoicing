@@ -107,6 +107,55 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
             )
         )
 
+    def test_discount_removal_preserves_sections_and_restores_totals(self):
+        invoice = self.env["account.move"].create(
+            {
+                "move_type": "in_invoice",
+                "partner_id": self.partner_1.id,
+                "invoice_line_ids": [
+                    Command.create(
+                        {"display_type": "line_section", "name": "Services"}
+                    ),
+                    Command.create(
+                        {"display_type": "line_note", "name": "Agreed work"}
+                    ),
+                    *(
+                        Command.create(
+                            {
+                                "name": name,
+                                "price_unit": amount,
+                                "quantity": 1,
+                                "tax_ids": [Command.set(self.tax.ids)],
+                            }
+                        )
+                        for name, amount in (("Preparation", 200), ("Review", 100))
+                    ),
+                ],
+            }
+        )
+        original_lines = invoice.invoice_line_ids
+        with Form(invoice) as invoice_form:
+            invoice_form.global_discount_ids.add(self.global_discount_2)
+        self.assertAlmostEqual(invoice.amount_untaxed, 210)
+        self.assertAlmostEqual(invoice.amount_tax, 31.5)
+        self.assertAlmostEqual(invoice.amount_total, 241.5)
+        self.assertAlmostEqual(invoice.amount_global_discount, -90)
+        self.assertEqual(len(invoice.invoice_global_discount_ids), 1)
+        self.assertFalse(original_lines - invoice.invoice_line_ids)
+        self.assertCountEqual(
+            original_lines.mapped("display_type"),
+            ["line_section", "line_note", "product", "product"],
+        )
+
+        with Form(invoice) as invoice_form:
+            invoice_form.global_discount_ids.clear()
+        self.assertAlmostEqual(invoice.amount_untaxed, 300)
+        self.assertAlmostEqual(invoice.amount_tax, 45)
+        self.assertAlmostEqual(invoice.amount_total, 345)
+        self.assertAlmostEqual(invoice.amount_global_discount, 0)
+        self.assertFalse(invoice.invoice_global_discount_ids)
+        self.assertCountEqual(invoice.invoice_line_ids.ids, original_lines.ids)
+
     def test_01_global_invoice_succesive_discounts(self):
         """Add global discounts to the invoice"""
         invoice_tax_line = self.invoice.line_ids.filtered("tax_line_id")
@@ -302,6 +351,77 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
             lambda x: x.tax_ids == self.tax_0
         )
         self.assertAlmostEqual(discount_tax_0.discount_amount, 20)
+
+    def test_customer_invoice_inherits_the_partner_discount(self):
+        self.partner_1.customer_global_discount_ids = self.global_discount_1
+        tax = self.tax_sale_a.copy(
+            default={"amount": 15.0, "name": "Partner discount contract tax"}
+        )
+        invoice = self.env["account.move"].create(
+            {
+                "move_type": "out_invoice",
+                "partner_id": self.partner_1.id,
+                "invoice_date": "2026-01-15",
+                "invoice_line_ids": [
+                    Command.create(
+                        {
+                            "name": "Discounted service",
+                            "quantity": 1,
+                            "price_unit": 200.0,
+                            "tax_ids": [Command.set(tax.ids)],
+                        }
+                    )
+                ],
+            }
+        )
+        self.assertEqual(invoice.global_discount_ids, self.global_discount_1)
+        self.assertEqual(len(invoice.invoice_global_discount_ids), 1)
+        self.assertEqual(invoice.amount_global_discount, -40.0)
+        self.assertEqual(invoice.amount_untaxed, 160.0)
+        self.assertEqual(invoice.amount_tax, 24.0)
+        self.assertEqual(invoice.amount_total, 184.0)
+        self.assertEqual(invoice.currency_id, invoice.company_id.currency_id)
+        invoice.action_post()
+
+        rows = (
+            self.env["account.invoice.report"]
+            .with_context(allowed_company_ids=invoice.company_id.ids)
+            .search_read(
+                [
+                    ("move_id", "=", invoice.id),
+                    ("company_id", "=", invoice.company_id.id),
+                    ("state", "=", "posted"),
+                ],
+                [
+                    "company_id",
+                    "company_currency_id",
+                    "currency_id",
+                    "price_subtotal",
+                    "price_subtotal_currency",
+                    "price_total",
+                    "price_total_currency",
+                ],
+            )
+        )
+        service = invoice.invoice_line_ids.filtered(
+            lambda line: not line.invoice_global_discount_id
+        )
+        discount = invoice.line_ids.filtered("invoice_global_discount_id")
+        self.assertEqual(len(service), 1)
+        self.assertEqual(len(discount), 1)
+        self.assertEqual({row["id"] for row in rows}, {service.id, discount.id})
+        expected = {service.id: (200.0, 230.0), discount.id: (-40.0, -46.0)}
+        for row in rows:
+            self.assertEqual(row["company_id"][0], invoice.company_id.id)
+            for field in ("company_currency_id", "currency_id"):
+                self.assertEqual(row[field][0], invoice.currency_id.id)
+            subtotal, total = expected[row["id"]]
+            for field in ("price_subtotal", "price_subtotal_currency"):
+                self.assertAlmostEqual(row[field], subtotal)
+            for field in ("price_total", "price_total_currency"):
+                self.assertAlmostEqual(row[field], total)
+        self.assertAlmostEqual(sum(row["price_subtotal"] for row in rows), 160.0)
+        self.assertAlmostEqual(sum(row["price_total"] for row in rows), 184.0)
 
     def test_09_customer_invoice(self):
         global_discount = self.global_discount_obj.create(

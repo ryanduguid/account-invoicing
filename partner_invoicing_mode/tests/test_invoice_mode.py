@@ -48,6 +48,22 @@ class TestInvoiceMode(CommonPartnerInvoicingMode):
             self.SaleOrder.generate_invoices()
             trap.assert_jobs_count(0)
 
+    def test_queued_invoice_job_skips_corrected_deliveries(self):
+        self._confirm_and_deliver(self.so1)
+        self.assertEqual(self.so1.invoice_status, "to invoice")
+        self.assertFalse(self.so1.invoice_ids)
+        before_count = self.AccountMove.search_count([])
+        with trap_jobs() as trap:
+            self.SaleOrder.generate_invoices()
+            self.assertEqual(len(trap.enqueued_jobs), 1)
+            self.so1.order_line.qty_delivered = 0
+            self.assertNotEqual(self.so1.invoice_status, "to invoice")
+            with trap_jobs() as validation:
+                trap.perform_enqueued_jobs()
+            self.assertFalse(validation.enqueued_jobs)
+        self.assertFalse(self.so1.invoice_ids)
+        self.assertEqual(self.AccountMove.search_count([]), before_count)
+
     def test_invoicing_standard_cron(self):
         self.so1.payment_term_id = self.pt1.id
         self._confirm_and_deliver(self.so1)

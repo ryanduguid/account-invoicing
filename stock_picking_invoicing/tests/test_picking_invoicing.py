@@ -1,7 +1,8 @@
 # Copyright (C) 2019-Today: Odoo Community Association (OCA)
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
-from odoo import exceptions
+from odoo import Command, exceptions
+from odoo.tests import Form
 
 from .common import TestPickingInvoicingCommon
 
@@ -209,6 +210,161 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         # )
         # seller_to_delete.unlink()
 
+    def test_empty_draft_picking_defaults_to_sales_without_creating_an_invoice(self):
+        picking = self.picking_model.create(
+            {
+                "partner_id": self.partner.id,
+                "picking_type_id": self.pick_type_out.id,
+                "location_id": self.stock_location.id,
+                "location_dest_id": self.customers_location.id,
+            }
+        )
+        before = (picking.state, picking.invoice_state)
+        before_count = self.invoice_model.search_count([])
+        wizard_form = Form(
+            self.env["stock.invoice.onshipping"].with_context(
+                active_model=picking._name,
+                active_id=picking.id,
+                active_ids=picking.ids,
+                lang="en_US",
+            )
+        )
+        self.assertEqual(wizard_form.journal_type, "sale")
+        wizard = wizard_form.save()
+        with self.assertRaisesRegex(exceptions.UserError, "No invoice created!"):
+            wizard.action_generate()
+        self.assertEqual(self.invoice_model.search_count([]), before_count)
+        self.assertEqual((picking.state, picking.invoice_state), before)
+        self.assertEqual(picking.state, "draft")
+        self.assertFalse(picking.move_ids)
+        self.assertFalse(picking.invoice_ids)
+
+    def test_invoice_generation_refuses_a_picking_from_another_current_company(self):
+        current_company = self.env.company
+        other_company = self.env["res.company"].create(
+            {"name": "Fabricated stock invoice company"}
+        )
+        companies = [current_company.id, other_company.id]
+        warehouses = self.env["stock.warehouse"].with_context(
+            allowed_company_ids=companies
+        )
+        warehouse = warehouses.create(
+            {
+                "name": "Fabricated stock invoice warehouse",
+                "code": "FSIW",
+                "company_id": other_company.id,
+            }
+        )
+        picking = (
+            self.picking_model.with_context(allowed_company_ids=companies)
+            .with_company(other_company)
+            .create(
+                {
+                    "partner_id": self.partner.id,
+                    "picking_type_id": warehouse.out_type_id.id,
+                    "location_id": warehouse.lot_stock_id.id,
+                    "location_dest_id": self.customers_location.id,
+                }
+            )
+        )
+        self.move_model.with_env(picking.env).create(
+            {
+                "product_id": self.product_test_1.id,
+                "picking_id": picking.id,
+                "location_id": picking.location_id.id,
+                "location_dest_id": picking.location_dest_id.id,
+                "product_uom_qty": 1,
+                "product_uom": self.product_test_1.uom_id.id,
+            }
+        )
+        self.picking_move_state(picking)
+        picking.set_to_be_invoiced()
+        self.assertEqual(picking.company_id, other_company)
+        self.assertEqual(picking.state, "done")
+        self.assertEqual(picking.invoice_state, "2binvoiced")
+        before_move_states = picking.move_ids.mapped("invoice_state")
+        invoices = self.invoice_model.with_context(allowed_company_ids=companies)
+        before_count = invoices.search_count([])
+        wizard = (
+            self.env["stock.invoice.onshipping"]
+            .with_context(
+                allowed_company_ids=companies,
+                active_model=picking._name,
+                active_id=picking.id,
+                active_ids=picking.ids,
+                lang="en_US",
+            )
+            .create({})
+        )
+        self.assertEqual(wizard.env.company, current_company)
+        with self.assertRaisesRegex(
+            exceptions.UserError, "All pickings are not related to your company!"
+        ):
+            wizard.action_generate()
+        self.assertEqual(invoices.search_count([]), before_count)
+        self.assertFalse(picking.invoice_ids)
+        self.assertEqual(picking.state, "done")
+        self.assertEqual(picking.invoice_state, "2binvoiced")
+        self.assertEqual(picking.move_ids.mapped("invoice_state"), before_move_states)
+
+    def test_vendor_bill_uses_the_supplier_quantity_break(self):
+        product = self.product_model.create(
+            {
+                "name": "Quantity-priced cabinet",
+                "type": "consu",
+                "standard_price": 800.0,
+                "uom_id": self.env.ref("uom.product_uom_unit").id,
+                "taxes_id": [Command.clear()],
+                "supplier_taxes_id": [Command.clear()],
+            }
+        )
+        for quantity, price in ((0, 120.0), (10, 100.0)):
+            self.env["product.supplierinfo"].create(
+                {
+                    "partner_id": self.supplier.id,
+                    "product_tmpl_id": product.product_tmpl_id.id,
+                    "min_qty": quantity,
+                    "price": price,
+                    "currency_id": self.env.company.currency_id.id,
+                }
+            )
+        for quantity, price in ((1, 120.0), (10, 100.0)):
+            with self.subTest(quantity=quantity):
+                picking = self.picking_model.create(
+                    {
+                        "partner_id": self.supplier.id,
+                        "picking_type_id": self.pick_type_in.id,
+                        "invoice_state": "2binvoiced",
+                        "location_id": self.suppliers_location.id,
+                        "location_dest_id": self.stock_location.id,
+                    }
+                )
+                self.move_model.create(
+                    {
+                        "product_id": product.id,
+                        "picking_id": picking.id,
+                        "location_id": self.suppliers_location.id,
+                        "location_dest_id": self.stock_location.id,
+                        "product_uom_qty": quantity,
+                        "product_uom": product.uom_id.id,
+                    }
+                )
+                self.picking_move_state(picking)
+                self.assertEqual(picking.state, "done")
+                invoice = self.create_invoice_wizard(picking)
+                self.assertEqual(len(invoice), 1)
+                self.assertEqual(invoice.move_type, "in_invoice")
+                self.assertEqual(invoice.partner_id, self.supplier)
+                self.assertEqual(invoice.picking_ids, picking)
+                self.assertEqual(len(invoice.invoice_line_ids), 1)
+                self.assertEqual(invoice.invoice_line_ids.product_id, product)
+                self.assertEqual(invoice.invoice_line_ids.quantity, quantity)
+                self.assertEqual(invoice.invoice_line_ids.price_unit, price)
+                self.assertEqual(invoice.amount_untaxed, quantity * price)
+                self.assertEqual(invoice.amount_total, quantity * price)
+                invoice.action_post()
+                self.assertEqual(invoice.state, "posted")
+
     def test_0_picking_out_invoicing(self):
         # setting Agrolait type to default, because it's 'contact' in demo data
         nb_invoice_before = self.invoice_model.search_count([])
@@ -251,9 +407,9 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
             assert inv_line.tax_ids, "Error to map Sale Tax in Invoice Line."
             assert inv_line.product_uom_id, "Error to map Product UOM in Invoice Line."
             assert inv_line.price_unit, "Error in Price Unit"
-            assert inv_line.move_line_ids, (
-                "Error, there no relation between Invoice Line and Stock Move Line."
-            )
+            assert (
+                inv_line.move_line_ids
+            ), "Error, there no relation between Invoice Line and Stock Move Line."
             for mv_line in inv_line.move_line_ids:
                 self.assertEqual(
                     mv_line.id,
@@ -790,6 +946,17 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         """
         Test Return Supplier Picking and Invoice created.
         """
+        self.product_price_test.supplier_taxes_id = [Command.clear()]
+        seller = self.env["product.supplierinfo"].create(
+            {
+                "partner_id": self.partner4.id,
+                "product_tmpl_id": self.product_price_test.product_tmpl_id.id,
+                "min_qty": 0,
+                "price": 125.0,
+                "currency_id": self.env.company.currency_id.id,
+            }
+        )
+        self.assertEqual(self.product_price_test.seller_ids, seller)
         picking = self.picking_model.create(
             {
                 "partner_id": self.partner4.id,
@@ -813,15 +980,6 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         self.picking_move_state(picking)
         self.assertEqual(picking.state, "done")
         invoice = self.create_invoice_wizard(picking)
-        for line in invoice.invoice_line_ids:
-            for seller in line.product_id.seller_ids:
-                if seller.partner_id == invoice.partner_id:
-                    self.assertEqual(
-                        seller.price,
-                        line.price_unit,
-                        "Product Price in invoice line should "
-                        "be the same of Seller Price.",
-                    )
         # Confirm Invoice
         invoice.action_post()
         self.assertEqual(invoice.state, "posted", "Invoice should be in state Posted")
@@ -841,6 +999,25 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         self.assertEqual(picking_devolution.state, "done", "Change state fail.")
 
         invoice_devolution = self.create_invoice_wizard(picking_devolution)
+        for document, move_type, source in (
+            (invoice, "in_invoice", picking),
+            (invoice_devolution, "in_refund", picking_devolution),
+        ):
+            with self.subTest(move_type=move_type):
+                self.assertEqual(len(document), 1)
+                self.assertEqual(document.move_type, move_type)
+                self.assertEqual(document.partner_id, self.partner4)
+                self.assertEqual(document.currency_id, self.env.company.currency_id)
+                self.assertEqual(document.picking_ids, source)
+                self.assertEqual(len(document.invoice_line_ids), 1)
+                self.assertEqual(
+                    document.invoice_line_ids.product_id, self.product_price_test
+                )
+                self.assertEqual(document.invoice_line_ids.quantity, 1)
+                self.assertEqual(document.invoice_line_ids.price_unit, 125.0)
+                self.assertEqual(document.amount_untaxed, 125.0)
+                self.assertEqual(document.amount_tax, 0.0)
+                self.assertEqual(document.amount_total, 125.0)
         # Confirm Return Invoice
         invoice_devolution.action_post()
         self.assertEqual(

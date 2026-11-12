@@ -62,6 +62,18 @@ class TestProductProduct(AccountTestInvoicingCommon):
         self.assertEqual(self.product_b.account_move_lines_count, 0)
         self.assertEqual(self.product_template.account_move_lines_count, 1)
 
+    def test_invoice_count_is_hidden_without_accounting_permission(self):
+        restricted = new_test_user(
+            self.env, login="restricted_account_count", groups="base.group_user"
+        )
+        restricted.group_ids = [Command.set(self.env.ref("base.group_user").ids)]
+        self.assertFalse(restricted.has_group("account.group_account_invoice"))
+        product = self.product_with_bill.with_user(restricted)
+        product._compute_account_move_lines_count()
+        self.assertEqual(product.account_move_lines_count, 0)
+        self.product_with_bill._compute_account_move_lines_count()
+        self.assertEqual(self.product_with_bill.account_move_lines_count, 1)
+
     @users("admin")
     def test_compute_account_move_lines_count_access(self):
         product = self.product_with_bill

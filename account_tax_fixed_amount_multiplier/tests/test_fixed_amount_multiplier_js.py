@@ -21,6 +21,35 @@ class TestFixedAmountMultiplierJs(TestTaxCommon):
         values["fixed_amount_multiplier"] = tax.fixed_amount_multiplier
         return values
 
+    def test_product_multipliers_allow_missing_product_and_zero_weight(self):
+        zero_weight_product = self._create_product(uom_id=self.unit_uom.id, weight=0.0)
+        for multiplier, amount, product, tax_amount, total in [
+            ("product_quantity", 5.0, None, 10.0, 210.0),
+            ("product_weight", 3.0, zero_weight_product, 0.0, 200.0),
+        ]:
+            tax = self.env["account.tax"].create(
+                {
+                    "name": f"Fixed {amount} {multiplier} defaults",
+                    "amount_type": "fixed",
+                    "amount": amount,
+                    "fixed_amount_multiplier": multiplier,
+                    "type_tax_use": "sale",
+                }
+            )
+            kwargs = {"product": product} if product else {}
+            self.assert_taxes_computation(
+                tax,
+                price_unit=100.0,
+                quantity=2.0,
+                expected_values={
+                    "total_excluded": 200.0,
+                    "total_included": total,
+                    "taxes_data": [(200.0, tax_amount)],
+                },
+                **kwargs,
+            )
+        self._run_js_tests()
+
     def test_multiplier_none_zero_quantity(self):
         """Test no multiplier applies the fixed amount once on zero quantity."""
         tax = self.env["account.tax"].create(

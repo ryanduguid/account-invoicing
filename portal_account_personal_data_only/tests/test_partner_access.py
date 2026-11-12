@@ -7,6 +7,8 @@ from odoo.tests.common import tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
+from ..hooks import post_init_hook, uninstall_hook
+
 
 @tagged("post_install", "-at_install")
 class TestPartnerAccess(AccountTestInvoicingCommon):
@@ -44,6 +46,16 @@ class TestPartnerAccess(AccountTestInvoicingCommon):
                 "user_ids": [Command.set([user.id])],
             }
         )
+
+    def test_hook_lifecycle_restores_the_standard_portal_rules(self):
+        rules = self.env.ref("account.account_invoice_rule_portal") | self.env.ref(
+            "account.account_invoice_line_rule_portal"
+        )
+        self.assertEqual([rule.active for rule in rules], [False, False])
+        uninstall_hook(self.env)
+        self.assertEqual([rule.active for rule in rules], [True, True])
+        post_init_hook(self.env)
+        self.assertEqual([rule.active for rule in rules], [False, False])
 
     def test_access_invoice(self):
         invoice_a = self.init_invoice(

@@ -108,8 +108,7 @@ class TestSaleOrderLineInput(TransactionCase):
         self.assertFalse(self.picking.is_return)
 
     def test_return_po_wo_to_refund(self):
-        if not self.env.registry.models.get("purchase.order", False):
-            return True
+        self.assertIn("purchase.order", self.env.registry.models)
         order_form = Form(self.env["purchase.order"])
         order_form.partner_id = self.partner
         with order_form.order_line.new() as line_form:

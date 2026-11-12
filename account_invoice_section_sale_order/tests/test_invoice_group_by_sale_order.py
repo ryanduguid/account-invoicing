@@ -28,12 +28,12 @@ class TestInvoiceGroupBySaleOrder(Common):
             60: (f"{self.product_2.name}\norder 2 line 2", "product"),
         }
         invoice_ids = (self.order1_p1 + self.order2_p1)._create_invoices()
+        self.assertEqual(len(invoice_ids), 1)
         lines = invoice_ids[0].invoice_line_ids.sorted("sequence")
-        for line in lines:
-            if line.sequence not in result:
-                continue
-            self.assertEqual(line.name, result[line.sequence][0])
-            self.assertEqual(line.display_type, result[line.sequence][1])
+        self.assertEqual(
+            [(line.sequence, line.name, line.display_type) for line in lines],
+            [(sequence, *expected) for sequence, expected in sorted(result.items())],
+        )
 
     def test_create_invoice_with_currency(self):
         """Check invoice is generated with a correct total amount"""
@@ -118,8 +118,14 @@ class TestInvoiceGroupBySaleOrder(Common):
                 70: (f"{self.product_1.name}\norder 3 line 1", "product"),
                 80: (f"{self.product_2.name}\norder 3 line 2", "product"),
             }
-            for line in invoice.invoice_line_ids.sorted("sequence"):
-                if line.sequence not in result:
-                    continue
-                self.assertEqual(line.name, result[line.sequence][0])
-                self.assertEqual(line.display_type, result[line.sequence][1])
+            self.assertEqual(len(invoice), 1)
+            self.assertEqual(
+                [
+                    (line.sequence, line.name, line.display_type)
+                    for line in invoice.invoice_line_ids.sorted("sequence")
+                ],
+                [
+                    (sequence, *expected)
+                    for sequence, expected in sorted(result.items())
+                ],
+            )
