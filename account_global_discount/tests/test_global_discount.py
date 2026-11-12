@@ -156,6 +156,41 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
         self.assertFalse(invoice.invoice_global_discount_ids)
         self.assertCountEqual(invoice.invoice_line_ids.ids, original_lines.ids)
 
+    def test_taxed_bypassed_product_keeps_its_full_amount_when_discounted(self):
+        invoice = self.env["account.move"].create(
+            {
+                "move_type": "in_invoice",
+                "partner_id": self.partner_1.id,
+                "invoice_date": self.invoice.date,
+                "invoice_line_ids": [
+                    Command.create(
+                        {
+                            "name": "Sample bypassed service",
+                            "product_id": self.product_3.id,
+                            "account_id": self.account.id,
+                            "price_unit": 200,
+                            "quantity": 1,
+                            "tax_ids": [Command.set(self.tax.ids)],
+                        }
+                    )
+                ],
+            }
+        )
+        original_lines = invoice.invoice_line_ids
+        with Form(invoice) as invoice_form:
+            invoice_form.global_discount_ids.add(self.global_discount_2)
+        self.assertEqual(invoice.global_discount_ids, self.global_discount_2)
+        self.assertFalse(invoice.invoice_global_discount_ids)
+        self.assertEqual(invoice.invoice_line_ids, original_lines)
+        self.assertAlmostEqual(invoice.amount_global_discount, 0)
+        self.assertAlmostEqual(invoice.amount_untaxed, 200)
+        self.assertAlmostEqual(invoice.amount_tax, 30)
+        self.assertAlmostEqual(invoice.amount_total, 230)
+        invoice.action_post()
+        self.assertEqual(invoice.state, "posted")
+        self.assertFalse(invoice.invoice_global_discount_ids)
+        self.assertAlmostEqual(sum(invoice.line_ids.mapped("balance")), 0)
+
     def test_01_global_invoice_succesive_discounts(self):
         """Add global discounts to the invoice"""
         invoice_tax_line = self.invoice.line_ids.filtered("tax_line_id")

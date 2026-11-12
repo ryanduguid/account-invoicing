@@ -161,6 +161,41 @@ class TestAccountBilling(TransactionCase):
         self.assertEqual([invoice.amount_residual for invoice in invoices], [0.0, 0.0])
         self.assertEqual(billing.amount_due, 0.0)
 
+    def test_revalidated_billing_preserves_its_number_and_unpaid_invoices(self):
+        self.product.taxes_id = [Command.clear()]
+        invoices = self.create_invoice(amount=100) | self.create_invoice(amount=200)
+        action = invoices.action_create_billing()
+        billing = self.billing_model.browse(action["res_id"])
+        billing.threshold_date = fields.Date.context_today(
+            self.env.user
+        ) + relativedelta(years=1)
+        billing.validate_billing()
+        name = billing.name
+        lines = billing.billing_line_ids
+        self.assertTrue(name)
+        self.assertEqual(billing.amount_due, 300)
+        sequence = self.env.ref("account_billing.seq_account_customer_billing")
+        date_range = sequence.date_range_ids.filtered(
+            lambda record: record.date_from <= billing.date <= record.date_to
+        )
+        date_range.ensure_one()
+        next_number = date_range.number_next_actual
+
+        billing.action_cancel()
+        self.assertEqual(billing.state, "cancel")
+        billing.action_cancel_draft()
+        self.assertEqual(billing.state, "draft")
+        billing.validate_billing()
+
+        self.assertEqual(billing.state, "billed")
+        self.assertEqual(billing.name, name)
+        self.assertEqual(billing.billing_line_ids, lines)
+        self.assertEqual(set(billing.billing_line_ids.move_id.ids), set(invoices.ids))
+        self.assertEqual(billing.amount_due, 300)
+        self.assertEqual(invoices.mapped("amount_residual"), [100, 200])
+        date_range.invalidate_recordset(["number_next_actual"])
+        self.assertEqual(date_range.number_next_actual, next_number)
+
     def test_1_invoice_partner(self):
         # Test difference partner
         invoices = self.inv_1 + self.inv_4
