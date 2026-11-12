@@ -71,6 +71,58 @@ class TestInvoiceModeAtShippingGrouped(InvoiceModeAtShippingCommon):
         self.assertEqual("posted", invoice.state)
         self.assertEqual("posted", invoice_2.state)
 
+    def test_shipping_invoice_batch_defaults_to_current_company(self):
+        partner = self._create_partner(
+            "Shipping batch fixture",
+            invoicing_mode="standard",
+            one_invoice_per_shipping=True,
+        )
+        order = self._create_sale_orders(
+            1,
+            partner_id=partner.id,
+            partner_invoice_id=partner.id,
+            partner_shipping_id=partner.id,
+        )
+        order.action_confirm()
+        picking = order.picking_ids
+        picking.move_ids.write({"quantity": 4, "picked": True})
+        with trap_jobs() as shipping_jobs:
+            picking._action_done()
+            shipping_jobs.assert_jobs_count(1)
+            shipping_jobs.assert_enqueued_job(picking._invoicing_at_shipping)
+            shipping_jobs.perform_enqueued_jobs()
+        self.assertEqual(picking.state, "done")
+        invoice = order.invoice_ids
+        self.assertEqual(len(invoice), 1)
+        self.assertEqual(invoice.state, "draft")
+        self.assertEqual(invoice.company_id, self.env.company)
+        self.assertAlmostEqual(invoice.amount_total, 492)
+
+        with trap_jobs() as batch_jobs:
+            self.env["sale.order"].generate_invoices()
+            batch_jobs.assert_jobs_count(1)
+            with trap_jobs() as validation_jobs:
+                batch_jobs.perform_enqueued_jobs()
+                validation_jobs.assert_jobs_count(1)
+                validation_jobs.assert_enqueued_job(invoice._validate_invoice)
+                validation_jobs.perform_enqueued_jobs()
+        self.assertEqual(order.invoice_ids, invoice)
+        self.assertEqual(invoice.state, "posted")
+        self.assertAlmostEqual(invoice.amount_total, 492)
+
+    def test_shipping_delay_rejects_negative_days(self):
+        self.assertEqual(self.partner.invoicing_at_shipping_delay, 0)
+        with (
+            self.assertRaisesRegex(
+                ValidationError, "The invoicing at shipping delay cannot be negative"
+            ),
+            self.env.cr.savepoint(),
+        ):
+            self.partner.invoicing_at_shipping_delay = -1
+        self.assertEqual(self.partner.invoicing_at_shipping_delay, 0)
+        self.partner.invoicing_at_shipping_delay = 1
+        self.assertEqual(self.partner.invoicing_at_shipping_delay, 1)
+
     def test_invoice_created_at_shipping_per_delivery_constrains(self):
         with self.assertRaises(ValidationError):
             self.partner.write(

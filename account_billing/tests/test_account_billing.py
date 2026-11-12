@@ -7,7 +7,9 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import Command, fields
 from odoo.exceptions import UserError, ValidationError
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, tagged
+
+from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
 
 class TestAccountBilling(TransactionCase):
@@ -137,11 +139,67 @@ class TestAccountBilling(TransactionCase):
         )
         return register_payments.action_create_payments()
 
+    def test_named_billing_registers_payment_for_its_invoices(self):
+        self.product.taxes_id = [Command.clear()]
+        invoices = self.create_invoice(amount=100) | self.create_invoice(amount=200)
+        action = invoices.action_create_billing()
+        billing = self.billing_model.browse(action["res_id"])
+        self.assertFalse(billing.name)
+        self.assertEqual(billing.display_name, "Draft Billing")
+        billing.threshold_date = fields.Date.context_today(
+            self.env.user
+        ) + relativedelta(years=1)
+        billing.validate_billing()
+        self.assertEqual(billing.state, "billed")
+        self.assertTrue(billing.name)
+        self.assertEqual(billing.display_name, billing.name)
+        self.assertEqual(set(billing.billing_line_ids.move_id.ids), set(invoices.ids))
+        self.assertEqual(billing.amount_due, 300.0)
+        payment_action = billing.action_register_payment()
+        self.assertEqual(payment_action["res_model"], "account.payment.register")
+        self.create_payment(payment_action["context"])
+        self.assertEqual([invoice.amount_residual for invoice in invoices], [0.0, 0.0])
+        self.assertEqual(billing.amount_due, 0.0)
+
     def test_1_invoice_partner(self):
         # Test difference partner
         invoices = self.inv_1 + self.inv_4
         with self.assertRaises(UserError):
             invoices.action_create_billing()
+
+    def test_empty_billing_collects_a_later_posted_invoice(self):
+        partner = self.env["res.partner"].create({"name": "Pending billing partner"})
+        billing = self.billing_model.create(
+            {
+                "partner_id": partner.id,
+                "bill_type": "out_invoice",
+                "currency_id": self.currency_eur_id,
+                "threshold_date": fields.Date.context_today(self.env.user)
+                + relativedelta(years=1),
+                "threshold_date_type": "invoice_date",
+            }
+        )
+        billing.compute_lines()
+        self.assertFalse(billing.billing_line_ids)
+        self.assertEqual(billing.invoice_related_count, 0)
+        self.assertEqual(billing.amount_due, 0.0)
+        with (
+            self.assertRaisesRegex(UserError, "You need to add a line before validate"),
+            self.env.cr.savepoint(),
+        ):
+            billing.validate_billing()
+        self.assertEqual(billing.state, "draft")
+
+        self.product.taxes_id = [Command.clear()]
+        invoice = self.create_invoice(amount=100, partner=partner.id)
+        billing.compute_lines()
+        self.assertEqual(billing.billing_line_ids.move_id, invoice)
+        self.assertEqual(billing.invoice_related_count, 1)
+        self.assertEqual(billing.amount_due, 100.0)
+        billing.validate_billing()
+        self.assertEqual(billing.state, "billed")
+        self.assertTrue(billing.name)
+        self.assertEqual(invoice.amount_residual, 100.0)
 
     def test_2_invoice_currency(self):
         # Test difference currency
@@ -250,16 +308,17 @@ class TestAccountBilling(TransactionCase):
             partner=self.partner_id.id,
             invoice_type="in_invoice",
         )
-        if inv_1.state != "posted":
-            inv_1.action_post()
+        self.assertEqual(inv_1.state, "posted")
         inv_2 = inv_1.copy()
+        self.assertEqual(inv_2.state, "draft")
         # Need to explicitly assign invoice date, not kept on copy
         inv_2.invoice_date = fields.Date.context_today(self.env.user)
-        if inv_2.state != "posted":
-            inv_2.action_post()
+        inv_2.action_post()
         invoices = inv_1 + inv_2
         action = invoices.action_create_billing()
-        self.billing_model.browse(action["res_id"])
+        billing = self.billing_model.browse(action["res_id"])
+        self.assertEqual(set(billing.billing_line_ids.move_id.ids), set(invoices.ids))
+        self.assertEqual(billing.invoice_related_count, 2)
 
     def test_8_record_rule_company_restriction(self):
         other_company = self.env["res.company"].create({"name": "Other Company"})
@@ -354,3 +413,42 @@ class TestAccountBilling(TransactionCase):
             billing.billing_line_ids.mapped("move_id").ids,
             (inv_b + inv_c + inv_d + inv_a).ids,
         )
+
+
+@tagged("post_install", "-at_install")
+class TestBillingCompanies(AccountTestInvoicingCommon):
+    def test_billing_rejects_invoices_from_different_companies(self):
+        other_company = self.setup_other_company()["company"]
+        companies = self.env.company | other_company
+        self.env.user.company_ids = companies
+        self.env = self.env(
+            context=dict(self.env.context, allowed_company_ids=companies.ids)
+        )
+        partner = self.env["res.partner"].create({"name": "Shared billing fixture"})
+        currency = self.env.company.currency_id
+        invoices = self.env["account.move"]
+        for company in companies:
+            invoice = self.init_invoice(
+                "out_invoice",
+                partner=partner,
+                company=company,
+                amounts=[50],
+                post=False,
+            )
+            invoice.currency_id = currency
+            invoice.invoice_line_ids.tax_ids = False
+            invoice.action_post()
+            invoices |= invoice
+        self.assertEqual(invoices.partner_id, partner)
+        self.assertEqual(invoices.currency_id, currency)
+        before_count = self.env["account.billing"].search_count([])
+        with (
+            self.assertRaisesRegex(
+                UserError, "Please select invoices with same company"
+            ),
+            self.env.cr.savepoint(),
+        ):
+            invoices.action_create_billing()
+        self.assertEqual([invoice.amount_residual for invoice in invoices], [50, 50])
+        self.assertEqual(invoices.mapped("state"), ["posted", "posted"])
+        self.assertEqual(self.env["account.billing"].search_count([]), before_count)

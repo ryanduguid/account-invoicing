@@ -49,6 +49,55 @@ class TestFixedAmountCurrencyJs(TestTaxCommon):
         )
         self._run_js_tests()
 
+    def test_fixed_tax_in_document_currency_keeps_amount_with_manual_rate(self):
+        """A manual document rate must not reconvert a tax in that currency."""
+        tax = self.env["account.tax"].create(
+            {
+                "name": "Fixed 10 EUR",
+                "amount_type": "fixed",
+                "amount": 10.0,
+                "currency_id": self.other_currency.id,
+                "type_tax_use": "sale",
+            }
+        )
+        document = self.populate_document(
+            self.init_document(
+                lines=[
+                    {"price_unit": 100.0, "quantity": 5, "tax_ids": tax},
+                ],
+                currency=self.other_currency,
+                rate=0.80,
+            )
+        )
+        self.assert_base_lines_tax_details(
+            document,
+            {
+                "base_lines_tax_details": [
+                    {
+                        "total_excluded_currency": 500.0,
+                        "total_excluded": 625.0,
+                        "total_included_currency": 550.0,
+                        "total_included": 687.5,
+                        "delta_total_excluded_currency": 0.0,
+                        "delta_total_excluded": 0.0,
+                        "manual_total_excluded": None,
+                        "manual_total_excluded_currency": None,
+                        "manual_tax_amounts": None,
+                        "taxes_data": [
+                            {
+                                "tax_id": tax.id,
+                                "tax_amount_currency": 50.0,
+                                "tax_amount": 62.5,
+                                "base_amount_currency": 500.0,
+                                "base_amount": 625.0,
+                            },
+                        ],
+                    },
+                ],
+            },
+        )
+        self._run_js_tests()
+
     def test_fixed_amount_company_currency(self):
         """Fixed tax in company currency on company currency doc (JS parity)."""
         tax = self.env["account.tax"].create(

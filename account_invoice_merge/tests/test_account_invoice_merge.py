@@ -128,6 +128,81 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
             "INV-REF-1 INV-REF-2",
         )
 
+    def test_invoice_merge_preserves_distinct_payment_references_once(self):
+        invoices = self.invoice1 | self.invoice2 | self.invoice5
+        for invoice, reference in zip(
+            invoices, ("REF-A", "REF-B", "REF-B"), strict=True
+        ):
+            invoice.payment_reference = reference
+            invoice.invoice_line_ids.write(
+                {"price_unit": 100.0, "quantity": 1, "tax_ids": [Command.clear()]}
+            )
+        invoices_info = invoices.do_merge(keep_references=True)
+        self.assertEqual(len(invoices_info), 1)
+        merged = self.inv_model.browse(next(iter(invoices_info)))
+        self.assertEqual(merged.payment_reference, "REF-A REF-B")
+        self.assertEqual(len(merged.invoice_line_ids), 1)
+        self.assertEqual(merged.invoice_line_ids.quantity, 3)
+        self.assertEqual(merged.amount_untaxed, 300.0)
+        self.assertEqual(merged.amount_total, 300.0)
+
+    def test_invoice_merge_preserves_and_groups_analytic_allocations(self):
+        plan = self.env["account.analytic.plan"].create(
+            {"name": "Merge allocation plan"}
+        )
+        accounts = self.env["account.analytic.account"].create(
+            [
+                {"name": name, "plan_id": plan.id, "company_id": self.company.id}
+                for name in ("Preparation", "Review")
+            ]
+        )
+        first, second = (str(account.id) for account in accounts)
+        matching = {first: 60, second: 40}
+        different = {first: 20, second: 80}
+        invoices = self.invoice1 | self.invoice2 | self.invoice5
+        for invoice, distribution in zip(
+            invoices, (matching, matching, different), strict=True
+        ):
+            invoice.invoice_line_ids.write(
+                {
+                    "price_unit": 100,
+                    "quantity": 1,
+                    "tax_ids": [Command.clear()],
+                    "analytic_distribution": distribution,
+                }
+            )
+        invoices.invoice_line_ids.flush_recordset(["analytic_distribution"])
+        invoices.invoice_line_ids.invalidate_recordset(["analytic_distribution"])
+        action = self._get_wizard(invoices.ids, create=True).merge_invoices()
+        merged = self.inv_model.search(action["domain"]).filtered(
+            lambda invoice: invoice.state == "draft"
+        )
+        self.assertEqual(len(merged), 1)
+        self.assertNotIn(merged, invoices)
+        self.assertTrue(all(invoice.state == "cancel" for invoice in invoices))
+        self.assertAlmostEqual(merged.amount_untaxed, 300)
+        self.assertAlmostEqual(merged.amount_tax, 0)
+        self.assertAlmostEqual(merged.amount_total, 300)
+        lines = merged.invoice_line_ids.filtered(
+            lambda line: line.display_type == "product"
+        )
+        self.assertEqual(len(lines), 2)
+        for persisted in (False, True):
+            if persisted:
+                lines.flush_recordset(["analytic_distribution"])
+                lines.invalidate_recordset(["analytic_distribution"])
+            for distribution, quantity, subtotal in (
+                (matching, 2, 200),
+                (different, 1, 100),
+            ):
+                allocated = lines.filtered(
+                    lambda line, distribution=distribution: line.analytic_distribution
+                    == distribution
+                )
+                self.assertEqual(len(allocated), 1)
+                self.assertAlmostEqual(allocated.quantity, quantity)
+                self.assertAlmostEqual(allocated.price_subtotal, subtotal)
+
     def test_invoice_merge_single_invoice(self):
         invoices_info = self.invoice1.do_merge()
         self.assertFalse(invoices_info)

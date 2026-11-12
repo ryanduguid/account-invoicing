@@ -56,6 +56,25 @@ class TestInvoiceTripleDiscount(BaseCommon):
         invoice = invoice_form.save()
         return invoice
 
+    def test_writing_conventional_discount_replaces_the_three_components(self):
+        invoice = self.create_simple_invoice(100)
+        line = invoice.invoice_line_ids
+        line.write({"discount1": 30, "discount2": 20, "discount3": 10})
+        self.assertAlmostEqual(line.discount, 49.6)
+        self.assertEqual(line.price_subtotal, 50.4)
+        self.assertEqual(invoice.amount_tax, 7.56)
+        self.assertEqual(invoice.amount_total, 57.96)
+        line.write({"discount": 25})
+        self.assertEqual((line.discount1, line.discount2, line.discount3), (25, 0, 0))
+        self.assertEqual(line.price_subtotal, 75)
+        self.assertEqual(invoice.amount_tax, 11.25)
+        self.assertEqual(invoice.amount_total, 86.25)
+        line.write({"discount": 0})
+        self.assertEqual((line.discount1, line.discount2, line.discount3), (0, 0, 0))
+        self.assertEqual(line.price_subtotal, 100)
+        self.assertEqual(invoice.amount_tax, 15)
+        self.assertEqual(invoice.amount_total, 115)
+
     def test_01_discounts(self):
         """Tests multiple discounts in line with taxes"""
         invoice = self.create_simple_invoice(200)

@@ -625,8 +625,8 @@ class AccountInvoiceClearingLinesWizard(models.TransientModel):
             precision_rounding=clearing.company_currency_id.rounding,
         ):
             return clearing.action_reopen_wizard()
-        # Always inverse sign because move lines has negative residual amounts
-        amount_to_clear = -clearing.amount_to_clear
+        # Add the remaining amount to this line's existing allocation.
+        amount_to_clear = self.amount_to_clear - clearing.amount_to_clear
         cmp_fnc = float.__le__ if self.amount_residual < 0.0 else float.__ge__
         if cmp_fnc(amount_to_clear, self.amount_residual):
             amount_to_clear = self.amount_residual
