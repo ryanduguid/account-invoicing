@@ -1,3 +1,4 @@
+from odoo import Command
 from odoo.exceptions import ValidationError
 from odoo.tests import tagged
 
@@ -97,6 +98,51 @@ class TestReceipts(AccountTestInvoicingCommon):
                 )
                 with self.assertRaises(ValidationError):
                     receipt.write({"journal_id": non_receipt_journals.ids[0]})
+
+    def test_receipts_keep_the_selected_journal_when_none_is_receipt_only(self):
+        self.env["account.journal"].search([("receipts", "=", True)]).write(
+            {"receipts": False}
+        )
+        partner = self.env["res.partner"].create({"name": "Receipt fallback partner"})
+        for move_type, journal_type in (
+            ("out_receipt", "sale"),
+            ("in_receipt", "purchase"),
+        ):
+            with self.subTest(move_type=move_type):
+                journal = self.env["account.journal"].search(
+                    [
+                        ("company_id", "=", self.env.company.id),
+                        ("type", "=", journal_type),
+                        ("receipts", "=", False),
+                    ],
+                    limit=1,
+                )
+                self.assertTrue(journal)
+                receipt = self.env["account.move"].create(
+                    {
+                        "move_type": move_type,
+                        "journal_id": journal.id,
+                        "partner_id": partner.id,
+                        "invoice_date": "2026-01-15",
+                        "invoice_line_ids": [
+                            Command.create(
+                                {
+                                    "product_id": self.product_a.id,
+                                    "quantity": 2,
+                                    "price_unit": 50,
+                                    "tax_ids": [Command.clear()],
+                                }
+                            )
+                        ],
+                    }
+                )
+                self.assertEqual(receipt.journal_id, journal)
+                self.assertEqual(receipt.move_type, move_type)
+                self.assertEqual(receipt.company_id, journal.company_id)
+                self.assertEqual(receipt.amount_total, 100)
+                receipt.action_post()
+                self.assertEqual(receipt.state, "posted")
+                self.assertAlmostEqual(sum(receipt.line_ids.mapped("balance")), 0)
 
     def test_action_open_dashboard(self):
         """Test action_create_new and open_action"""

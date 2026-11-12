@@ -45,3 +45,40 @@ class TestSaleOrderInvoicingQtyPercentage(BaseCommon):
         self.wizard.create_invoices()
         self.assertEqual(self.order.invoice_ids.invoice_line_ids.quantity, 10)
         self.assertEqual(self.order.order_line.qty_to_invoice, 10)
+
+    def test_standard_invoicing_keeps_the_full_order_quantity(self):
+        order = self.env["sale.order"].create(
+            {
+                "partner_id": self.partner.id,
+                "order_line": [
+                    Command.create(
+                        {
+                            "product_id": self.product.id,
+                            "product_uom_qty": 20,
+                            "price_unit": 25,
+                            "tax_ids": [Command.clear()],
+                        }
+                    )
+                ],
+            }
+        )
+        order.action_confirm()
+        wizard = (
+            self.env["sale.advance.payment.inv"]
+            .with_context(active_model="sale.order", active_ids=order.ids)
+            .create({"advance_payment_method": "delivered"})
+        )
+        wizard.create_invoices()
+        self.assertEqual(len(order.invoice_ids), 1)
+        invoice = order.invoice_ids
+        line = invoice.invoice_line_ids.filtered(
+            lambda record: record.display_type == "product"
+        )
+        self.assertEqual(len(line), 1)
+        self.assertEqual(line.sale_line_ids, order.order_line)
+        self.assertEqual(line.quantity, 20)
+        self.assertEqual(line.price_unit, 25)
+        self.assertFalse(line.tax_ids)
+        self.assertEqual(invoice.amount_total, 500)
+        self.assertEqual(order.order_line.qty_invoiced, 20)
+        self.assertEqual(order.order_line.qty_to_invoice, 0)

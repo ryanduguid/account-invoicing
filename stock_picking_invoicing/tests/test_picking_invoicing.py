@@ -365,6 +365,78 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
                 invoice.action_post()
                 self.assertEqual(invoice.state, "posted")
 
+    def test_default_group_preserves_each_delivery_and_zero_prices(self):
+        self.partner.write({"type": "invoice", "property_product_pricelist": False})
+        for price in (0.0, 25.0):
+            with self.subTest(price=price):
+                product = self.product_model.create(
+                    {
+                        "name": "Separate delivery sample",
+                        "type": "consu",
+                        "list_price": price,
+                        "taxes_id": [Command.clear()],
+                        "supplier_taxes_id": [Command.clear()],
+                        "property_account_income_id": self.account_revenue.id,
+                    }
+                )
+                pickings = self.picking_model.browse()
+                for quantity in (2, 3):
+                    picking = self.picking_model.create(
+                        {
+                            "partner_id": self.partner.id,
+                            "picking_type_id": self.pick_type_out.id,
+                            "location_id": self.stock_location.id,
+                            "location_dest_id": self.customers_location.id,
+                        }
+                    )
+                    self.move_model.create(
+                        {
+                            "product_id": product.id,
+                            "picking_id": picking.id,
+                            "location_id": self.stock_location.id,
+                            "location_dest_id": self.customers_location.id,
+                            "product_uom_qty": quantity,
+                            "product_uom": product.uom_id.id,
+                        }
+                    )
+                    picking.set_to_be_invoiced()
+                    self.picking_move_state(picking)
+                    self.assertEqual(picking.state, "done")
+                    pickings |= picking
+                wizard_form = Form(
+                    self.env["stock.invoice.onshipping"].with_context(
+                        active_ids=pickings.ids, active_model=pickings._name
+                    )
+                )
+                self.assertEqual(wizard_form.group, "picking")
+                action = wizard_form.save().action_generate()
+                invoices = self.invoice_model.search(
+                    [("picking_ids", "in", pickings.ids)]
+                )
+                self.assertEqual(len(invoices), 2)
+                self.assertEqual(self.invoice_model.search(action["domain"]), invoices)
+                for picking, quantity in zip(pickings, (2, 3), strict=True):
+                    invoice = invoices.filtered(
+                        lambda invoice, picking=picking: invoice.picking_ids == picking
+                    )
+                    self.assertEqual(len(invoice), 1)
+                    self.assertEqual(invoice.move_type, "out_invoice")
+                    self.assertEqual(invoice.partner_id, self.partner)
+                    self.assertEqual(invoice.company_id, picking.company_id)
+                    self.assertEqual(picking.invoice_ids, invoice)
+                    self.assertEqual(picking.invoice_state, "invoiced")
+                    line = invoice.invoice_line_ids
+                    self.assertEqual(len(line), 1)
+                    self.assertEqual(line.product_id, product)
+                    self.assertEqual(line.move_line_ids, picking.move_ids)
+                    self.assertEqual(line.quantity, quantity)
+                    self.assertEqual(line.price_unit, price)
+                    self.assertFalse(line.tax_ids)
+                    self.assertEqual(invoice.amount_untaxed, quantity * price)
+                    self.assertEqual(invoice.amount_total, quantity * price)
+                    invoice.action_post()
+                    self.assertEqual(invoice.state, "posted")
+
     def test_0_picking_out_invoicing(self):
         # setting Agrolait type to default, because it's 'contact' in demo data
         nb_invoice_before = self.invoice_model.search_count([])

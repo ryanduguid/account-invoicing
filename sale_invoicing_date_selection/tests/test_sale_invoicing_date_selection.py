@@ -61,3 +61,35 @@ class TestSaleInvoicingDateSelection(BaseCommon):
         action = wiz.create_invoices()
         invoices = self.env["account.move"].browse(action["res_id"])
         self.assertEqual(fields.Date.to_string(invoices[0].invoice_date), "2024-03-01")
+
+    def test_down_payment_without_selected_date_uses_the_posting_date(self):
+        order = self._create_sale_order(self.partner)
+        order.order_line.tax_ids = False
+        order.action_confirm()
+        wizard = (
+            self.env["sale.advance.payment.inv"]
+            .with_context(
+                active_model="sale.order",
+                active_id=order.id,
+                active_ids=order.ids,
+                open_invoices=True,
+            )
+            .create(
+                {
+                    "advance_payment_method": "fixed",
+                    "fixed_amount": 10,
+                    "invoice_date": False,
+                }
+            )
+        )
+        action = wizard.create_invoices()
+        invoice = self.env["account.move"].browse(action["res_id"])
+        self.assertEqual(invoice, order.invoice_ids)
+        self.assertEqual(invoice.state, "draft")
+        self.assertEqual(invoice.amount_untaxed, 10)
+        self.assertEqual(invoice.amount_total, 10)
+        self.assertTrue(invoice.invoice_line_ids.sale_line_ids.is_downpayment)
+        today = fields.Date.context_today(invoice)
+        invoice.action_post()
+        self.assertEqual(invoice.state, "posted")
+        self.assertEqual(invoice.invoice_date, today)

@@ -352,6 +352,79 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
         )
         self.assertAlmostEqual(discount_tax_0.discount_amount, 20)
 
+    def test_partner_defaults_apply_only_the_invoice_company_discount(self):
+        other_data = self.setup_other_company()
+        companies = self.env.company | other_data["company"]
+        self.env.user.company_ids = companies
+        self.env = self.env(
+            context=dict(self.env.context, allowed_company_ids=companies.ids)
+        )
+        partner = self.env["res.partner"].create(
+            {"name": "Shared discount customer", "company_id": False}
+        )
+        cases = []
+        discounts = self.env["global.discount"]
+        for data, rate, untaxed, total in (
+            (self.company_data, 20, 160, 184),
+            (other_data, 50, 100, 115),
+        ):
+            company = data["company"]
+            account = data["default_account_revenue"]
+            discount = self.env["global.discount"].with_company(company).create(
+                {
+                    "name": "Customer discount " + company.name,
+                    "company_id": company.id,
+                    "discount_scope": "sale",
+                    "discount": rate,
+                    "account_id": account.id,
+                }
+            )
+            discounts |= discount
+            cases.append((company, account, discount, untaxed, total))
+        partner.customer_global_discount_ids = discounts
+        self.assertEqual(partner.customer_global_discount_ids, discounts)
+        for company, account, discount, untaxed, total in cases:
+            with self.subTest(company=company.name):
+                tax = self.env["account.tax"].with_company(company).create(
+                    {
+                        "name": "Company discount tax",
+                        "company_id": company.id,
+                        "type_tax_use": "sale",
+                        "amount_type": "percent",
+                        "amount": 15,
+                    }
+                )
+                invoice = self.env["account.move"].with_company(company).create(
+                    {
+                        "move_type": "out_invoice",
+                        "partner_id": partner.id,
+                        "invoice_date": "2026-01-15",
+                        "invoice_line_ids": [
+                            Command.create(
+                                {
+                                    "name": "Company service",
+                                    "account_id": account.id,
+                                    "quantity": 1,
+                                    "price_unit": 200,
+                                    "tax_ids": [Command.set(tax.ids)],
+                                }
+                            )
+                        ],
+                    }
+                )
+                self.assertEqual(invoice.company_id, company)
+                self.assertEqual(invoice.global_discount_ids, discount)
+                applied = invoice.invoice_global_discount_ids
+                self.assertEqual(applied.global_discount_id, discount)
+                self.assertEqual(applied.account_id, account)
+                self.assertEqual(applied.company_id, company)
+                self.assertEqual(invoice.amount_untaxed, untaxed)
+                self.assertEqual(invoice.amount_tax, total - untaxed)
+                self.assertEqual(invoice.amount_total, total)
+                invoice.action_post()
+                self.assertEqual(invoice.state, "posted")
+                self.assertAlmostEqual(sum(invoice.line_ids.mapped("balance")), 0)
+
     def test_customer_invoice_inherits_the_partner_discount(self):
         self.partner_1.customer_global_discount_ids = self.global_discount_1
         tax = self.tax_sale_a.copy(
