@@ -497,6 +497,82 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         self.assertEqual(picking.invoice_state, "2binvoiced")
         return picking
 
+    def test_contactless_delivery_can_be_invoiced_before_assigning_customer(self):
+        product = self.product_model.create(
+            {
+                "name": "Contactless delivery sample",
+                "type": "consu",
+                "list_price": 25.0,
+                "standard_price": 7.0,
+                "taxes_id": [Command.clear()],
+                "supplier_taxes_id": [Command.clear()],
+                "property_account_income_id": self.account_revenue.id,
+            }
+        )
+        picking = self.picking_model.create(
+            {
+                "partner_id": False,
+                "picking_type_id": self.pick_type_out.id,
+                "location_id": self.stock_location.id,
+                "location_dest_id": self.customers_location.id,
+            }
+        )
+        move = self.move_model.create(
+            {
+                "product_id": product.id,
+                "picking_id": picking.id,
+                "location_id": picking.location_id.id,
+                "location_dest_id": picking.location_dest_id.id,
+                "product_uom_qty": 2,
+                "product_uom": product.uom_id.id,
+            }
+        )
+        picking.set_to_be_invoiced()
+        self.picking_move_state(picking)
+        self.assertEqual(picking.state, "done")
+        self.assertEqual(picking.invoice_state, "2binvoiced")
+        self.assertFalse(picking.partner_id)
+        wizard_form = Form(
+            self.env["stock.invoice.onshipping"].with_context(
+                active_model=picking._name, active_ids=picking.ids, lang="en_US"
+            )
+        )
+        self.assertEqual(wizard_form.group, "picking")
+        action = wizard_form.save().action_generate()
+        invoice = self.invoice_model.browse(action["res_id"])
+        self.assertEqual(invoice.state, "draft")
+        self.assertEqual(invoice.move_type, "out_invoice")
+        self.assertFalse(invoice.partner_id)
+        self.assertEqual(invoice.company_id, picking.company_id)
+        self.assertEqual(invoice.currency_id, self.env.company.currency_id)
+        self.assertEqual(invoice.journal_id.type, "sale")
+        self.assertEqual(invoice.picking_ids, picking)
+        self.assertEqual(picking.invoice_ids, invoice)
+        self.assertEqual(picking.invoice_state, "invoiced")
+        self.assertEqual(move.invoice_state, "invoiced")
+        line = invoice.invoice_line_ids
+        self.assertEqual(len(line), 1)
+        self.assertEqual(line.product_id, product)
+        self.assertEqual(line.move_line_ids, move)
+        self.assertEqual(line.quantity, 2)
+        self.assertEqual(line.price_unit, 25.0)
+        self.assertFalse(line.tax_ids)
+        self.assertEqual(invoice.amount_untaxed, 50.0)
+        self.assertEqual(invoice.amount_total, 50.0)
+        with self.assertRaisesRegex(exceptions.UserError, "(?i)customer"):
+            invoice.with_context(lang="en_US").action_post()
+        self.assertEqual(invoice.state, "draft")
+        with Form(invoice) as invoice_form:
+            invoice_form.partner_id = self.partner
+        invoice.action_post()
+        self.assertEqual(invoice.state, "posted")
+        self.assertEqual(invoice.amount_total, 50.0)
+        self.assertEqual(sum(invoice.line_ids.mapped("balance")), 0)
+        receivable = invoice.line_ids.filtered(
+            lambda line: line.account_id.account_type == "asset_receivable"
+        )
+        self.assertEqual(sum(receivable.mapped("balance")), 50.0)
+
     def test_default_group_refuses_picking_without_billable_moves(self):
         picking = self._create_untaxed_customer_delivery(2)
         picking.move_ids.write({"invoice_state": "none"})
