@@ -401,7 +401,7 @@ class AccountInvoiceClearingWizard(models.TransientModel):
     def _get_remaining_amount_to_clear(self):
         """Get the remaining amount to clear."""
         self.ensure_one()
-        return self.amount_to_clear + sum(self.line_ids.mapped("amount_to_clear"))
+        return self.amount_to_clear
 
     # flake8: noqa: C901
     def _get_move_dict_vals(self):
