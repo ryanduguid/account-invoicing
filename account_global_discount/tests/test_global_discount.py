@@ -8,6 +8,7 @@ from odoo.fields import Command
 from odoo.tests import Form, tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
+from odoo.addons.account_global_discount import _pre_init_global_discount_fields
 
 
 @tagged("post_install", "-at_install")
@@ -107,6 +108,35 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
             )
         )
 
+    def test_pre_init_preserves_existing_discounted_invoice(self):
+        with Form(self.invoice) as invoice_form:
+            invoice_form.global_discount_ids.add(self.global_discount_2)
+        self.assertAlmostEqual(self.invoice.amount_global_discount, -60)
+        self.assertAlmostEqual(self.invoice.amount_untaxed_before_global_discounts, 400)
+        invoice_fields = [
+            "amount_global_discount",
+            "amount_untaxed_before_global_discounts",
+            "amount_untaxed",
+            "amount_tax",
+            "amount_total",
+            "global_discount_ids",
+            "invoice_global_discount_ids",
+            "invoice_line_ids",
+            "state",
+        ]
+        line_fields = ["quantity", "price_unit", "discount", "tax_ids", "balance"]
+        lines = self.invoice.invoice_line_ids
+        self.invoice.flush_recordset()
+        lines.flush_recordset()
+        before_invoice = self.invoice.read(invoice_fields)
+        before_lines = lines.read(line_fields)
+        for _ in range(2):
+            _pre_init_global_discount_fields(self.env)
+            self.invoice.invalidate_recordset(invoice_fields)
+            lines.invalidate_recordset(line_fields)
+            self.assertEqual(self.invoice.read(invoice_fields), before_invoice)
+            self.assertEqual(lines.read(line_fields), before_lines)
+
     def test_discount_removal_preserves_sections_and_restores_totals(self):
         invoice = self.env["account.move"].create(
             {
@@ -155,6 +185,41 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
         self.assertAlmostEqual(invoice.amount_global_discount, 0)
         self.assertFalse(invoice.invoice_global_discount_ids)
         self.assertCountEqual(invoice.invoice_line_ids.ids, original_lines.ids)
+
+    def test_taxed_bypassed_product_keeps_its_full_amount_when_discounted(self):
+        invoice = self.env["account.move"].create(
+            {
+                "move_type": "in_invoice",
+                "partner_id": self.partner_1.id,
+                "invoice_date": self.invoice.date,
+                "invoice_line_ids": [
+                    Command.create(
+                        {
+                            "name": "Sample bypassed service",
+                            "product_id": self.product_3.id,
+                            "account_id": self.account.id,
+                            "price_unit": 200,
+                            "quantity": 1,
+                            "tax_ids": [Command.set(self.tax.ids)],
+                        }
+                    )
+                ],
+            }
+        )
+        original_lines = invoice.invoice_line_ids
+        with Form(invoice) as invoice_form:
+            invoice_form.global_discount_ids.add(self.global_discount_2)
+        self.assertEqual(invoice.global_discount_ids, self.global_discount_2)
+        self.assertFalse(invoice.invoice_global_discount_ids)
+        self.assertEqual(invoice.invoice_line_ids, original_lines)
+        self.assertAlmostEqual(invoice.amount_global_discount, 0)
+        self.assertAlmostEqual(invoice.amount_untaxed, 200)
+        self.assertAlmostEqual(invoice.amount_tax, 30)
+        self.assertAlmostEqual(invoice.amount_total, 230)
+        invoice.action_post()
+        self.assertEqual(invoice.state, "posted")
+        self.assertFalse(invoice.invoice_global_discount_ids)
+        self.assertAlmostEqual(sum(invoice.line_ids.mapped("balance")), 0)
 
     def test_01_global_invoice_succesive_discounts(self):
         """Add global discounts to the invoice"""

@@ -3,12 +3,40 @@
 
 from odoo.exceptions import ValidationError
 
+from odoo.addons.partner_invoicing_mode_at_shipping import pre_init_hook
 from odoo.addons.queue_job.tests.common import trap_jobs
 
 from .common import InvoiceModeAtShippingCommon
 
 
 class TestInvoiceModeAtShippingGrouped(InvoiceModeAtShippingCommon):
+    def test_pre_init_preserves_existing_shipping_choices_and_orders(self):
+        standard_order = self._create_sale_orders(1)
+        self.assertFalse(standard_order.one_invoice_per_shipping)
+        self.partner.one_invoice_per_shipping = True
+        shipping_order = self._create_sale_orders(
+            1,
+            partner_id=self.partner.id,
+            partner_invoice_id=self.partner.id,
+            partner_shipping_id=self.partner.id,
+        )
+        self.assertTrue(shipping_order.one_invoice_per_shipping)
+        orders = standard_order | shipping_order
+        order_fields = [
+            "one_invoice_per_shipping",
+            "partner_id",
+            "partner_invoice_id",
+            "amount_total",
+            "order_line",
+            "state",
+        ]
+        orders.flush_recordset()
+        before_orders = orders.read(order_fields)
+        for _ in range(2):
+            pre_init_hook(self.env)
+            orders.invalidate_recordset(order_fields)
+            self.assertEqual(orders.read(order_fields), before_orders)
+
     def test_invoice_created_at_shipping_per_delivery(self):
         """Check that an invoice is created when goods are shipped."""
         self.partner.invoicing_mode = "standard"
