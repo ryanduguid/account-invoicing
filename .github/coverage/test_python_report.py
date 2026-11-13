@@ -17,7 +17,7 @@ class PythonReportTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="oca-python-report-")
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         addon = self.root / "fabricated_addon"
         addon.mkdir()
         (addon / "__manifest__.py").write_text("{'name': 'Fabricated addon'}\n")
