@@ -115,6 +115,34 @@ class TestInvoiceFixedDiscount(BaseCommon):
         self.assertEqual(self.invoice.invoice_line_ids.price_unit, 200.00)
         self.assertEqual(self.invoice.invoice_line_ids.price_subtotal, 160.00)
 
+    def test_suppressed_discount_onchanges_preserve_explicit_values(self):
+        invoice = self._create_invoice(discount=10.0, discount_fixed=20.0)
+        with Form(invoice.with_context(ignore_discount_onchange=True)) as form:
+            with form.invoice_line_ids.edit(0) as line:
+                line.price_unit = 250.0
+        invoice.flush_recordset()
+        invoice.invalidate_recordset()
+        line = invoice.invoice_line_ids
+        self.assertEqual(line.discount, 10.0)
+        self.assertEqual(line.discount_fixed, 20.0)
+        self.assertEqual(line.quantity, 1.0)
+        self.assertEqual(line.price_unit, 250.0)
+        self.assertEqual(line.price_subtotal, 230.0)
+        self.assertEqual(invoice.amount_total, 253.0)
+
+        with Form(invoice.with_context(ignore_discount_onchange=True)) as form:
+            with form.invoice_line_ids.edit(0) as line_form:
+                line_form.discount = 25.0
+        invoice.flush_recordset()
+        invoice.invalidate_recordset()
+        line = invoice.invoice_line_ids
+        self.assertEqual(line.discount, 25.0)
+        self.assertEqual(line.discount_fixed, 20.0)
+        self.assertEqual(line.quantity, 1.0)
+        self.assertEqual(line.price_unit, 250.0)
+        self.assertEqual(line.price_subtotal, 230.0)
+        self.assertEqual(invoice.amount_total, 253.0)
+
     def test_02_discounts_fixed_multiple_units(self):
         """Tests multiple discounts in line with taxes."""
 

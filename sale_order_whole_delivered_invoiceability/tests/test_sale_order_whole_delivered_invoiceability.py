@@ -49,6 +49,21 @@ class TestSaleOrderWholeDeliveredInvoiceability(BaseCommon):
         self.order.action_confirm()
         self.assertEqual(self.order.invoice_status, "no")
 
+    def test_whole_delivered_order_becomes_invoiceable(self):
+        order = self.order
+        order.order_line.qty_delivered_method = "manual"
+        self.assertTrue(order.whole_delivered_invoiceability)
+        order.action_confirm()
+        self.assertEqual(order.invoice_status, "no")
+        for line in order.order_line:
+            line.qty_delivered = line.product_uom_qty
+        order.flush_recordset()
+        order.invalidate_recordset()
+        self.assertTrue(order.whole_delivered_invoiceability)
+        self.assertEqual(order.order_line.mapped("product_uom_qty"), [5.0, 5.0])
+        self.assertEqual(order.order_line.mapped("qty_to_invoice"), [5.0, 5.0])
+        self.assertEqual(order.invoice_status, "to invoice")
+
     def test_whole_delivered_without_invoiceability(self):
         self.order.partner_id = self.partner2
         # Prevent errors when the sale_stock module is installed
