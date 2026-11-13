@@ -307,6 +307,90 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         self.assertEqual(picking.invoice_state, "2binvoiced")
         self.assertEqual(picking.move_ids.mapped("invoice_state"), before_move_states)
 
+    def test_nonbillable_first_picking_does_not_change_customer_invoice(self):
+        before_count = self.invoice_model.search_count([])
+        self.partner.write({"type": "invoice", "property_product_pricelist": False})
+        product = self.product_model.create(
+            {
+                "name": "Eligible delivery sample",
+                "type": "consu",
+                "list_price": 25.0,
+                "standard_price": 7.0,
+                "taxes_id": [Command.clear()],
+                "supplier_taxes_id": [Command.clear()],
+                "property_account_income_id": self.account_revenue.id,
+                "property_account_expense_id": self.account_revenue.id,
+            }
+        )
+        pickings = self.picking_model.browse()
+        for incoming in (True, False):
+            picking = self.picking_model.create(
+                {
+                    "partner_id": self.supplier.id if incoming else self.partner.id,
+                    "picking_type_id": (
+                        self.pick_type_in.id if incoming else self.pick_type_out.id
+                    ),
+                    "location_id": (
+                        self.suppliers_location.id
+                        if incoming
+                        else self.stock_location.id
+                    ),
+                    "location_dest_id": (
+                        self.stock_location.id
+                        if incoming
+                        else self.customers_location.id
+                    ),
+                }
+            )
+            self.move_model.create(
+                {
+                    "product_id": product.id,
+                    "picking_id": picking.id,
+                    "location_id": picking.location_id.id,
+                    "location_dest_id": picking.location_dest_id.id,
+                    "product_uom_qty": 2,
+                    "product_uom": product.uom_id.id,
+                }
+            )
+            if not incoming:
+                picking.set_to_be_invoiced()
+            self.picking_move_state(picking)
+            self.assertEqual(picking.state, "done")
+            pickings |= picking
+        excluded, delivery = pickings
+        self.assertEqual(excluded.invoice_state, "none")
+        self.assertEqual(delivery.invoice_state, "2binvoiced")
+        wizard_form = Form(
+            self.env["stock.invoice.onshipping"].with_context(
+                active_ids=pickings.ids, active_model=pickings._name
+            )
+        )
+        self.assertEqual(wizard_form.group, "picking")
+        action = wizard_form.save().action_generate()
+        invoice = self.invoice_model.search([("picking_ids", "in", pickings.ids)])
+        self.assertEqual(len(invoice), 1)
+        self.assertEqual(self.invoice_model.search_count([]), before_count + 1)
+        self.assertEqual(invoice.move_type, "out_invoice")
+        self.assertEqual(invoice.journal_id.type, "sale")
+        self.assertEqual(
+            action["id"], self.env.ref("account.action_move_out_invoice_type").id
+        )
+        self.assertEqual(invoice.partner_id, self.partner)
+        self.assertEqual(invoice.picking_ids, delivery)
+        self.assertFalse(excluded.invoice_ids)
+        self.assertEqual(excluded.invoice_state, "none")
+        self.assertEqual(excluded.move_ids.mapped("invoice_state"), ["none"])
+        self.assertEqual(delivery.invoice_state, "invoiced")
+        line = invoice.invoice_line_ids
+        self.assertEqual(len(line), 1)
+        self.assertEqual(line.product_id, product)
+        self.assertEqual(line.move_line_ids, delivery.move_ids)
+        self.assertEqual(line.quantity, 2)
+        self.assertEqual(line.price_unit, 25.0)
+        self.assertFalse(line.tax_ids)
+        self.assertEqual(invoice.amount_untaxed, 50.0)
+        self.assertEqual(invoice.amount_total, 50.0)
+
     def test_vendor_bill_uses_the_supplier_quantity_break(self):
         product = self.product_model.create(
             {
@@ -351,7 +435,18 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
                 )
                 self.picking_move_state(picking)
                 self.assertEqual(picking.state, "done")
-                invoice = self.create_invoice_wizard(picking)
+                wizard = Form(
+                    self.env["stock.invoice.onshipping"].with_context(
+                        active_ids=picking.ids, active_model=picking._name
+                    )
+                ).save()
+                action = wizard.action_generate()
+                invoice = self.invoice_model.search(
+                    [("picking_ids", "in", picking.ids)]
+                )
+                self.assertEqual(
+                    action["id"], self.env.ref("account.action_move_in_invoice_type").id
+                )
                 self.assertEqual(len(invoice), 1)
                 self.assertEqual(invoice.move_type, "in_invoice")
                 self.assertEqual(invoice.partner_id, self.supplier)
