@@ -179,6 +179,7 @@ class TestAccountBilling(TransactionCase):
             lambda record: record.date_from <= billing.date <= record.date_to
         )
         date_range.ensure_one()
+        date_range.invalidate_recordset(["number_next_actual"])
         next_number = date_range.number_next_actual
 
         billing.action_cancel()
