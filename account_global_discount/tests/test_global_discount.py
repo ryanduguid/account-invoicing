@@ -108,6 +108,23 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
             )
         )
 
+    def test_discount_value_helper_forwards_an_explicit_account(self):
+        override = self.company_data["default_account_expense"]
+        self.assertNotEqual(override, self.account)
+        values = self.global_discount_1._get_global_discount_vals(
+            100, account_id=override.id
+        )
+        self.assertEqual(
+            values,
+            {
+                "global_discount": self.global_discount_1,
+                "base": 100,
+                "base_discounted": 80.0,
+                "account_id": override.id,
+            },
+        )
+        self.assertEqual(self.global_discount_1.account_id, self.account)
+
     def test_pre_init_preserves_existing_discounted_invoice(self):
         with Form(self.invoice) as invoice_form:
             invoice_form.global_discount_ids.add(self.global_discount_2)
