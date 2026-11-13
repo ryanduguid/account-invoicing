@@ -412,10 +412,12 @@ class TestClearingWizard(AccountTestInvoicingCommon):
                 original_ids = set(wizard.line_ids.ids)
                 wizard._action_add_lines()
                 self.assertEqual(set(wizard.line_ids.ids), original_ids)
+                self.assertEqual(wizard._get_remaining_amount_to_clear(), sign * 100)
                 lines[0].action_use_all_amount_residual()
                 wizard.invalidate_recordset()
                 self.assertEqual(lines[0].amount_to_clear, -sign * 60)
                 self.assertEqual(wizard.amount_to_clear, sign * 40)
+                self.assertEqual(wizard._get_remaining_amount_to_clear(), sign * 40)
                 for _ in range(2):
                     wizard.action_fill_amount_to_clear()
                     wizard.invalidate_recordset()
@@ -423,6 +425,7 @@ class TestClearingWizard(AccountTestInvoicingCommon):
                         lines.mapped("amount_to_clear"), [-sign * 60, -sign * 40, 0]
                     )
                     self.assertEqual(wizard.amount_to_clear, 0)
+                    self.assertEqual(wizard._get_remaining_amount_to_clear(), 0)
                 wizard.button_confirm()
                 self.assertEqual(target.amount_residual, 0)
                 self.assertEqual(counterparts.mapped("amount_residual"), [0, 110, 40])
