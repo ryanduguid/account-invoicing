@@ -3,7 +3,8 @@
 from unittest import mock
 
 from odoo.exceptions import UserError
-from odoo.fields import Domain
+from odoo.fields import Command, Domain
+from odoo.tests import Form
 
 from .common import Common
 
@@ -14,6 +15,101 @@ SECTION_NAME_FUNCTION = (
 
 
 class TestInvoiceGroupBySaleOrder(Common):
+    def test_grouped_final_invoice_keeps_native_down_payment_section(self):
+        pricelist = self.env["product.pricelist"].create(
+            {
+                "name": "Down payment fixture",
+                "currency_id": self.env.company.currency_id.id,
+            }
+        )
+        orders = self.env["sale.order"].browse()
+        for product in (self.product_1, self.product_2):
+            orders |= self.env["sale.order"].create(
+                {
+                    "partner_id": self.partner_1.id,
+                    "partner_invoice_id": self.partner_1.id,
+                    "partner_shipping_id": self.partner_1.id,
+                    "pricelist_id": pricelist.id,
+                    "order_line": [
+                        Command.create(
+                            {
+                                "product_id": product.id,
+                                "product_uom_id": product.uom_id.id,
+                                "product_uom_qty": 1,
+                                "price_unit": 100,
+                                "tax_ids": [Command.clear()],
+                            }
+                        )
+                    ],
+                }
+            )
+        orders.action_confirm()
+        self.assertEqual(orders.mapped("amount_total"), [100, 100])
+        advance_form = Form(
+            self.env["sale.advance.payment.inv"].with_context(
+                active_model=orders._name,
+                active_id=orders[0].id,
+                active_ids=orders[0].ids,
+                open_invoices=True,
+            )
+        )
+        advance_form.advance_payment_method = "percentage"
+        advance_form.amount = 25
+        advance_action = advance_form.save().create_invoices()
+        advance = self.env["account.move"].browse(advance_action["res_id"])
+        self.assertEqual(advance.amount_total, 25)
+        advance.action_post()
+        final_form = Form(
+            self.env["sale.advance.payment.inv"].with_context(
+                active_model=orders._name,
+                active_id=orders[0].id,
+                active_ids=orders.ids,
+                open_invoices=True,
+            )
+        )
+        self.assertEqual(final_form.advance_payment_method, "delivered")
+        self.assertTrue(final_form.consolidated_billing)
+        final_wizard = final_form.save()
+        self.assertTrue(final_wizard.deduct_down_payments)
+        final_action = final_wizard.create_invoices()
+        invoice = self.env["account.move"].browse(final_action["res_id"])
+        self.assertEqual(invoice.amount_untaxed, 175)
+        self.assertEqual(invoice.amount_total, 175)
+        self.assertEqual(invoice.invoice_line_ids.sale_line_ids.order_id, orders)
+        products = invoice.invoice_line_ids.filtered(
+            lambda line: line.display_type == "product"
+            and not line.sale_line_ids.filtered("is_downpayment")
+        )
+        deduction = invoice.invoice_line_ids.filtered(
+            lambda line: line.display_type == "product"
+            and line.sale_line_ids.filtered("is_downpayment")
+        )
+        self.assertEqual(products.product_id, self.product_1 | self.product_2)
+        self.assertEqual(sum(products.mapped("price_subtotal")), 200)
+        self.assertEqual(len(deduction), 1)
+        self.assertEqual(deduction.price_subtotal, -25)
+        self.assertEqual(deduction.sale_line_ids.order_id, orders[0])
+        sections = invoice.invoice_line_ids.filtered(
+            lambda line: line.display_type == "line_section"
+        )
+        self.assertEqual(len(sections), 3)
+        self.assertEqual(sections.mapped("name").count(orders[0].name), 1)
+        self.assertEqual(sections.mapped("name").count(orders[1].name), 1)
+        native_section = sections.filtered(
+            lambda line: line.name not in orders.mapped("name")
+        )
+        self.assertEqual(len(native_section), 1)
+        self.assertEqual(native_section.name, "Down Payments")
+        self.assertFalse(native_section.sale_line_ids)
+        invoice.action_post()
+        for document, total in ((advance, 25), (invoice, 175)):
+            self.assertEqual(document.state, "posted")
+            self.assertEqual(sum(document.line_ids.mapped("balance")), 0)
+            receivable = document.line_ids.filtered(
+                lambda line: line.account_id.account_type == "asset_receivable"
+            )
+            self.assertEqual(sum(receivable.mapped("balance")), total)
+
     def test_create_invoice(self):
         """Check invoice is generated  with sale order sections."""
         result = {
