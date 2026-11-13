@@ -34,11 +34,7 @@ class StockInvoiceOnshipping(models.TransientModel):
 
     @api.model
     def _get_journal_type(self):
-        active_ids = self.env.context.get("active_ids", [])
-        if active_ids:
-            active_ids = active_ids[0]
-        pick_obj = self.env["stock.picking"]
-        picking = pick_obj.browse(active_ids)
+        picking = self._load_pickings()[:1]
         if not picking or not picking.move_ids:
             return "sale"
         pick_type_code = picking.picking_type_id.code
@@ -226,10 +222,10 @@ class StockInvoiceOnshipping(models.TransientModel):
         if not invoices:
             raise UserError(self.env._("No invoice created!"))
 
+        inv_type = self._get_invoice_type()
         # Update the state on pickings related to new invoices only
         self._update_picking_invoice_status(invoices.mapped("picking_ids"))
 
-        inv_type = self._get_invoice_type()
         if inv_type in ["out_invoice", "out_refund"]:
             xmlid = "account.action_move_out_invoice_type"
         else:
@@ -283,10 +279,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         """
         self.ensure_one()
 
-        active_ids = self.env.context.get("active_ids", [])
-        if active_ids:
-            active_ids = active_ids[0]
-        picking = self.env["stock.picking"].browse(active_ids)
+        picking = self._load_pickings()[:1]
 
         inv_type = (
             INVOICE_TYPE_MAP.get(
