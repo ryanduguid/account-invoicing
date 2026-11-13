@@ -28,6 +28,35 @@ class TestClearingWizard(AccountTestInvoicingCommon):
             }
         )
 
+    def test_unsaved_wizard_without_active_invoices_has_an_empty_preview(self):
+        wizard_model = self.env["account.invoice.clearing.wizard"].with_context(
+            active_model=False, active_ids=[], active_id=False
+        )
+        moves = self.env["account.move"]
+        counts = (wizard_model.search_count([]), moves.search_count([]))
+        defaults = wizard_model.default_get(["invoice_ids", "journal_id", "date"])
+        self.assertFalse(defaults.get("invoice_ids"))
+        # Initialise the model without saving its required invoice selection.
+        wizard = wizard_model.new(defaults)
+        wizard._compute_initial_data()
+        wizard._onchange_move_type()
+        for field in (
+            "invoice_ids",
+            "move_line_ids",
+            "line_ids",
+            "company_id",
+            "company_currency_id",
+            "move_type",
+            "commercial_partner_id",
+        ):
+            self.assertFalse(wizard[field], field)
+        self.assertEqual(wizard.amount_to_clear, 0.0)
+        self.assertEqual(json.loads(wizard.move_data), [])
+        self.assertEqual(json.loads(wizard.preview_move_data)["groups_vals"], [])
+        self.assertEqual(
+            (wizard_model.search_count([]), moves.search_count([])), counts
+        )
+
     def test_clearing_wizard(self):
         """Test clearing wizard with different move types."""
 
