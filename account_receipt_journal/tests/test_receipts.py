@@ -30,7 +30,8 @@ class TestReceipts(AccountTestInvoicingCommon):
         )
 
     def test_entry_journal_type_helper_honours_the_context(self):
-        moves = self.env["account.move"].with_context({})
+        moves = self.env["account.move"]
+        self.assertNotIn("default_move_journal_types", moves.env.context)
         self.assertEqual(moves._get_journal_types("entry"), ["general"])
         self.assertEqual(
             moves.with_context(
