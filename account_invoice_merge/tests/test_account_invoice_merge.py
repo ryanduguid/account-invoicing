@@ -218,6 +218,22 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         self.assertEqual(len(merged_invoice.invoice_line_ids), 1)
         self.assertEqual(merged_invoice.invoice_line_ids.quantity, 0.0)
 
+    def test_merge_wizard_defaults_without_active_invoices(self):
+        invoices = self.invoice1 | self.invoice2
+        fields_to_preserve = ["state", "name", "amount_total", "invoice_line_ids"]
+        before = invoices.read(fields_to_preserve)
+        wizard = self.wiz.with_context(
+            active_model=False, active_ids=[], active_id=False
+        )
+        limited = wizard.default_get(["keep_references"])
+        self.assertTrue(limited["keep_references"])
+        self.assertNotIn("error_message", limited)
+        with_error = wizard.default_get(["keep_references", "error_message"])
+        self.assertTrue(with_error["keep_references"])
+        self.assertFalse(with_error["error_message"])
+        invoices.invalidate_recordset(fields_to_preserve)
+        self.assertEqual(invoices.read(fields_to_preserve), before)
+
     def test_error_check(self):
         """Check"""
         # Different partner
