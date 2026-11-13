@@ -11,7 +11,8 @@ from .common import InvoiceModeAtShippingCommon
 
 class TestInvoiceModeAtShippingGrouped(InvoiceModeAtShippingCommon):
     def test_pre_init_preserves_existing_shipping_choices_and_orders(self):
-        self.assertFalse(self.so1.one_invoice_per_shipping)
+        standard_order = self._create_sale_orders(1)
+        self.assertFalse(standard_order.one_invoice_per_shipping)
         self.partner.one_invoice_per_shipping = True
         shipping_order = self._create_sale_orders(
             1,
@@ -20,7 +21,7 @@ class TestInvoiceModeAtShippingGrouped(InvoiceModeAtShippingCommon):
             partner_shipping_id=self.partner.id,
         )
         self.assertTrue(shipping_order.one_invoice_per_shipping)
-        orders = self.so1 | shipping_order
+        orders = standard_order | shipping_order
         order_fields = [
             "one_invoice_per_shipping",
             "partner_id",
