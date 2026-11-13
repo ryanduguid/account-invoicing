@@ -460,6 +460,165 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
                 invoice.action_post()
                 self.assertEqual(invoice.state, "posted")
 
+    def _create_untaxed_customer_delivery(self, quantity):
+        self.partner.write({"type": "invoice", "property_product_pricelist": False})
+        product = self.product_model.create(
+            {
+                "name": "Delivery and return sample",
+                "type": "consu",
+                "list_price": 25.0,
+                "standard_price": 7.0,
+                "taxes_id": [Command.clear()],
+                "supplier_taxes_id": [Command.clear()],
+                "property_account_income_id": self.account_revenue.id,
+            }
+        )
+        picking = self.picking_model.create(
+            {
+                "partner_id": self.partner.id,
+                "picking_type_id": self.pick_type_out.id,
+                "location_id": self.stock_location.id,
+                "location_dest_id": self.customers_location.id,
+            }
+        )
+        self.move_model.create(
+            {
+                "product_id": product.id,
+                "picking_id": picking.id,
+                "location_id": picking.location_id.id,
+                "location_dest_id": picking.location_dest_id.id,
+                "product_uom_qty": quantity,
+                "product_uom": product.uom_id.id,
+            }
+        )
+        picking.set_to_be_invoiced()
+        self.picking_move_state(picking)
+        self.assertEqual(picking.state, "done")
+        self.assertEqual(picking.invoice_state, "2binvoiced")
+        return picking
+
+    def test_default_group_refuses_picking_without_billable_moves(self):
+        picking = self._create_untaxed_customer_delivery(2)
+        picking.move_ids.write({"invoice_state": "none"})
+        self.assertEqual(picking.invoice_state, "2binvoiced")
+        before_count = self.invoice_model.search_count([])
+        wizard_form = Form(
+            self.env["stock.invoice.onshipping"].with_context(
+                active_ids=picking.ids, active_model=picking._name, lang="en_US"
+            )
+        )
+        self.assertEqual(wizard_form.group, "picking")
+        with self.assertRaisesRegex(exceptions.UserError, "No invoice created!"):
+            wizard_form.save().action_generate()
+        self.assertEqual(self.invoice_model.search_count([]), before_count)
+        self.assertFalse(picking.invoice_ids)
+        self.assertFalse(
+            self.env["account.move.line"].search_count(
+                [("move_line_ids", "in", picking.move_ids.ids)]
+            )
+        )
+        self.assertEqual(picking.state, "done")
+        self.assertEqual(picking.invoice_state, "2binvoiced")
+        self.assertEqual(picking.move_ids.invoice_state, "none")
+
+    def test_default_group_skips_picking_without_billable_moves(self):
+        skipped = self._create_untaxed_customer_delivery(2)
+        skipped.move_ids.write({"invoice_state": "none"})
+        delivery = self._create_untaxed_customer_delivery(2)
+        pickings = skipped | delivery
+        before_count = self.invoice_model.search_count([])
+        wizard_form = Form(
+            self.env["stock.invoice.onshipping"].with_context(
+                active_ids=pickings.ids, active_model=pickings._name
+            )
+        )
+        self.assertEqual(wizard_form.group, "picking")
+        action = wizard_form.save().action_generate()
+        invoices = self.invoice_model.search([("picking_ids", "in", pickings.ids)])
+        self.assertEqual(len(invoices), 1)
+        self.assertEqual(self.invoice_model.search_count([]), before_count + 1)
+        self.assertEqual(action["res_id"], invoices.id)
+        self.assertEqual(invoices.move_type, "out_invoice")
+        self.assertEqual(invoices.journal_id.type, "sale")
+        self.assertEqual(invoices.partner_id, self.partner)
+        self.assertEqual(invoices.picking_ids, delivery)
+        line = invoices.invoice_line_ids
+        self.assertEqual(len(line), 1)
+        self.assertEqual(line.product_id, delivery.move_ids.product_id)
+        self.assertEqual(line.move_line_ids, delivery.move_ids)
+        self.assertEqual(line.quantity, 2)
+        self.assertEqual(line.price_unit, 25.0)
+        self.assertFalse(line.tax_ids)
+        self.assertEqual(invoices.amount_total, 50.0)
+        self.assertEqual(delivery.invoice_ids, invoices)
+        self.assertEqual(delivery.invoice_state, "invoiced")
+        self.assertFalse(skipped.invoice_ids)
+        self.assertFalse(
+            self.env["account.move.line"].search_count(
+                [("move_line_ids", "in", skipped.move_ids.ids)]
+            )
+        )
+        self.assertEqual(skipped.state, "done")
+        self.assertEqual(skipped.invoice_state, "2binvoiced")
+        self.assertEqual(skipped.move_ids.invoice_state, "none")
+
+    def _check_default_group_delivery_and_return(self, return_first):
+        delivery = self._create_untaxed_customer_delivery(3)
+        returned = self.return_picking_wizard(delivery)
+        self.picking_move_state(returned)
+        self.assertEqual(returned.state, "done")
+        self.assertEqual(returned.invoice_state, "2binvoiced")
+        self.assertEqual(returned.move_ids.product_uom_qty, 1)
+        pickings = returned | delivery if return_first else delivery | returned
+        before_count = self.invoice_model.search_count([])
+        wizard_form = Form(
+            self.env["stock.invoice.onshipping"].with_context(
+                active_ids=pickings.ids, active_model=pickings._name
+            )
+        )
+        self.assertEqual(wizard_form.group, "picking")
+        action = wizard_form.save().action_generate()
+        invoices = self.invoice_model.search([("picking_ids", "in", pickings.ids)])
+        self.assertEqual(len(invoices), 2)
+        self.assertEqual(self.invoice_model.search_count([]), before_count + 2)
+        self.assertEqual(self.invoice_model.search(action["domain"]), invoices)
+        for picking, move_type, quantity, total in (
+            (delivery, "out_invoice", 3, 75.0),
+            (returned, "out_refund", 1, 25.0),
+        ):
+            with self.subTest(move_type=move_type):
+                invoice = invoices.filtered(
+                    lambda invoice, picking=picking: invoice.picking_ids == picking
+                )
+                self.assertEqual(len(invoice), 1)
+                self.assertEqual(invoice.move_type, move_type)
+                self.assertEqual(invoice.journal_id.type, "sale")
+                self.assertEqual(invoice.partner_id, self.partner)
+                self.assertEqual(invoice.company_id, picking.company_id)
+                self.assertEqual(picking.invoice_ids, invoice)
+                self.assertEqual(picking.invoice_state, "invoiced")
+                line = invoice.invoice_line_ids
+                self.assertEqual(len(line), 1)
+                self.assertEqual(line.product_id, delivery.move_ids.product_id)
+                self.assertEqual(line.move_line_ids, picking.move_ids)
+                self.assertEqual(line.quantity, quantity)
+                self.assertEqual(line.price_unit, 25.0)
+                self.assertFalse(line.tax_ids)
+                self.assertEqual(invoice.amount_untaxed, total)
+                self.assertEqual(invoice.amount_total, total)
+                invoice.action_post()
+                self.assertEqual(invoice.state, "posted")
+        receivable = invoices.line_ids.filtered(
+            lambda line: line.account_id.account_type == "asset_receivable"
+        )
+        self.assertEqual(sum(receivable.mapped("balance")), 50.0)
+
+    def test_default_group_delivery_then_return_preserves_document_types(self):
+        self._check_default_group_delivery_and_return(return_first=False)
+
+    def test_default_group_return_then_delivery_preserves_document_types(self):
+        self._check_default_group_delivery_and_return(return_first=True)
+
     def test_default_group_preserves_each_delivery_and_zero_prices(self):
         self.partner.write({"type": "invoice", "property_product_pricelist": False})
         for price in (0.0, 25.0):
