@@ -343,6 +343,29 @@ class TestAccountMovePricelist(common.TransactionCase):
             }
         )
 
+    def test_discount_helper_without_a_pricelist_preserves_manual_values(self):
+        self.env.user.group_ids |= self.group_discount
+        self.invoice.pricelist_id = False
+        line = self.invoice.invoice_line_ids[:1]
+        line.write({"price_unit": 87.0, "discount": 13.0})
+        line._calculate_discount()
+        self.assertEqual(line.price_unit, 87.0)
+        self.assertEqual(line.discount, 13.0)
+
+    def test_discount_helper_for_a_fixed_rule_resets_the_manual_discount(self):
+        self.env.user.group_ids |= self.group_discount
+        self.invoice.pricelist_id = self.sale_pricelist_fixed_without_discount
+        self.invoice.button_update_prices_from_pricelist()
+        line = self.invoice.invoice_line_ids[:1]
+        self.assertEqual(
+            line.pricelist_item_id,
+            self.sale_pricelist_fixed_without_discount.item_ids,
+        )
+        line.discount = 13.0
+        line._calculate_discount()
+        self.assertEqual(line.price_unit, 60.0)
+        self.assertEqual(line.discount, 0.0)
+
     def test_pre_init_preserves_existing_invoice_pricelist_and_prices(self):
         self.invoice.pricelist_id = self.sale_pricelist
         self.invoice.button_update_prices_from_pricelist()

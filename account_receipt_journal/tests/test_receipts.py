@@ -29,6 +29,16 @@ class TestReceipts(AccountTestInvoicingCommon):
             }
         )
 
+    def test_entry_journal_type_helper_honours_the_context(self):
+        moves = self.env["account.move"].with_context({})
+        self.assertEqual(moves._get_journal_types("entry"), ["general"])
+        self.assertEqual(
+            moves.with_context(
+                default_move_journal_types=["bank", "cash"]
+            )._get_journal_types("entry"),
+            ["bank", "cash"],
+        )
+
     def test_receipt_journal_sequence(self):
         with self.assertRaises(ValidationError):
             self.out_receipt_journal.write({"sequence": 1})
