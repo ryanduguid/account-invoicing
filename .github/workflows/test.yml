@@ -49,10 +49,10 @@ jobs:
             name: test with OCB
             makepot: "true"
           - container: ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
-            include: "account_invoice_triple_discount"
+            include: "account_invoice_triple_discount,account_invoice_merge,account_global_discount"
             name: test with Odoo
           - container: ghcr.io/oca/oca-ci/py3.10-ocb19.0:latest
-            include: "account_invoice_triple_discount"
+            include: "account_invoice_triple_discount,account_invoice_merge,account_global_discount"
             name: test with OCB
             makepot: "true"
           - container: ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
