@@ -354,7 +354,7 @@ class StockInvoiceOnshipping(models.TransientModel):
         picking = pickings[0] if pickings else False
         partner_id = picking._get_partner_to_invoice()
         partner = self.env["res.partner"].browse(partner_id)
-        inv_type = self._get_invoice_type()
+        inv_type = self.with_context(active_ids=pickings.ids)._get_invoice_type()
         currency = self.env.company.currency_id
         if partner:
             code = picking.picking_type_id.code
