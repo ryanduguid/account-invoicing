@@ -8,6 +8,7 @@ from odoo.fields import Command
 from odoo.tests import Form, tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
+from odoo.addons.account_global_discount import _pre_init_global_discount_fields
 
 
 @tagged("post_install", "-at_install")
@@ -106,6 +107,35 @@ class TestGlobalDiscount(AccountTestInvoicingCommon):
                 }
             )
         )
+
+    def test_pre_init_preserves_existing_discounted_invoice(self):
+        with Form(self.invoice) as invoice_form:
+            invoice_form.global_discount_ids.add(self.global_discount_2)
+        self.assertAlmostEqual(self.invoice.amount_global_discount, -60)
+        self.assertAlmostEqual(self.invoice.amount_untaxed_before_global_discounts, 400)
+        invoice_fields = [
+            "amount_global_discount",
+            "amount_untaxed_before_global_discounts",
+            "amount_untaxed",
+            "amount_tax",
+            "amount_total",
+            "global_discount_ids",
+            "invoice_global_discount_ids",
+            "invoice_line_ids",
+            "state",
+        ]
+        line_fields = ["quantity", "price_unit", "discount", "tax_ids", "balance"]
+        lines = self.invoice.invoice_line_ids
+        self.invoice.flush_recordset()
+        lines.flush_recordset()
+        before_invoice = self.invoice.read(invoice_fields)
+        before_lines = lines.read(line_fields)
+        for _ in range(2):
+            _pre_init_global_discount_fields(self.env)
+            self.invoice.invalidate_recordset(invoice_fields)
+            lines.invalidate_recordset(line_fields)
+            self.assertEqual(self.invoice.read(invoice_fields), before_invoice)
+            self.assertEqual(lines.read(line_fields), before_lines)
 
     def test_discount_removal_preserves_sections_and_restores_totals(self):
         invoice = self.env["account.move"].create(

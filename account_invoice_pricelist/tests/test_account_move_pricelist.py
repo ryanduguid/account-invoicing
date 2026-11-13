@@ -4,6 +4,8 @@ from odoo.exceptions import UserError
 from odoo.fields import Command
 from odoo.tests import common
 
+from odoo.addons.account_invoice_pricelist import pre_init_hook
+
 
 class TestAccountMovePricelist(common.TransactionCase):
     @classmethod
@@ -340,6 +342,32 @@ class TestAccountMovePricelist(common.TransactionCase):
                 "write_date": "2010-01-01",
             }
         )
+
+    def test_pre_init_preserves_existing_invoice_pricelist_and_prices(self):
+        self.invoice.pricelist_id = self.sale_pricelist
+        self.invoice.button_update_prices_from_pricelist()
+        self.assertEqual(self.invoice.invoice_line_ids[:1].price_unit, 60)
+        invoice_fields = [
+            "pricelist_id",
+            "currency_id",
+            "amount_untaxed",
+            "amount_tax",
+            "amount_total",
+            "invoice_line_ids",
+            "state",
+        ]
+        line_fields = ["quantity", "price_unit", "discount", "tax_ids", "balance"]
+        lines = self.invoice.invoice_line_ids
+        self.invoice.flush_recordset()
+        lines.flush_recordset()
+        before_invoice = self.invoice.read(invoice_fields)
+        before_lines = lines.read(line_fields)
+        for _ in range(2):
+            pre_init_hook(self.env)
+            self.invoice.invalidate_recordset(invoice_fields)
+            lines.invalidate_recordset(line_fields)
+            self.assertEqual(self.invoice.read(invoice_fields), before_invoice)
+            self.assertEqual(lines.read(line_fields), before_lines)
 
     def test_01_account_invoice_pricelist(self):
         self.assertEqual(self.invoice.pricelist_id, self.sale_pricelist)
