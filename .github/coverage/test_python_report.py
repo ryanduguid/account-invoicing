@@ -12,6 +12,8 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import coverage
+
 
 class PythonReportTests(unittest.TestCase):
     def setUp(self):
@@ -121,6 +123,21 @@ class PythonReportTests(unittest.TestCase):
             all(line.attrib["condition-coverage"] == "0% (0/2)" for line in branches)
         )
         self.assertFalse(any(name.endswith("/__manifest__.py") for name in classes))
+
+    def test_measured_code_without_a_source_file_is_left_out(self):
+        # Odoo runs server actions as code named 'ir.actions.server(<id>,)'.
+        data = coverage.CoverageData(basename=str(self.data_file))
+        data.read()
+        data.add_arcs({str(self.root / "ir.actions.server(459,)"): [(-1, 1), (1, -1)]})
+        data.write()
+        result = self.report()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = {
+            item.attrib["filename"].replace("\\", "/")
+            for item in ET.parse(self.output).findall(".//class")
+        }
+        self.assertFalse(any("ir.actions.server" in name for name in names))
+        self.assertTrue(any(name.endswith("/loaded.py") for name in names))
 
     def test_a_new_python_source_outside_the_collected_groups_is_refused(self):
         (self.root / "maintenance.py").write_text("answer = 29\n")
