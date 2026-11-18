@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"PO-Revision-Date: 2026-04-27 13:45+0000\n"
+"PO-Revision-Date: 2026-11-17 13:46+0000\n"
 "Last-Translator: mymage <stefano.consolaro@mymage.it>\n"
 "Language-Team: none\n"
 "Language: it\n"
@@ -14,7 +14,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 5.15.2\n"
+"X-Generator: Weblate 2026.11.2\n"
 
 #. module: account_billing
 #: model:ir.model.fields,help:account_billing.field_account_billing__state
@@ -46,16 +46,60 @@ msgid "# of Invoices"
 msgstr "N° di fatture"
 
 #. module: account_billing
-#. odoo-python
-#: code:addons/account_billing/models/account_billing.py:0
-msgid "%s"
-msgstr "%s"
-
-#. module: account_billing
 #: model:ir.actions.report,print_report_name:account_billing.report_account_billing
 msgid "'BILL-%s%s' % (object.name, object.state == 'draft' and '-draft' or '')"
 msgstr ""
 "'FATTURA-%s%s' % (object.name, object.state == 'draft' and '-draft' or '')"
+
+#. module: account_billing
+#: model:mail.template,body_html:account_billing.email_template_billing
+msgid ""
+"<div style=\"margin: 0px; padding: 0px;\">\n"
+"                <p style=\"margin: 0px; padding: 0px; font-size: 13px;\">\n"
+"    Dear <t t-out=\"object.partner_id.name or ''\">Brandon Freeman</t>\n"
+"    <t t-if=\"object.partner_id.parent_id\">\n"
+"        (<t t-out=\"object.partner_id.parent_id.name or ''\">Azure Interior</"
+"t>)\n"
+"    </t>\n"
+"    <br/><br/>\n"
+"    Please find attached the billing from <t t-out=\"object.company_id.name "
+"or ''\">YourCompany</t>.\n"
+"    <br/><br/>\n"
+"    If you have any questions, please do not hesitate to contact us.\n"
+"    <br/><br/>\n"
+"    Best regards,\n"
+"    <t t-if=\"not is_html_empty(env.user.signature)\">\n"
+"                    <br/>\n"
+"                    <br/>\n"
+"                    <t t-out=\"env.user.signature or ''\"/>\n"
+"                </t>\n"
+"</p>\n"
+"            </div>\n"
+"        "
+msgstr ""
+"<div style=\"margin: 0px; padding: 0px;\">\n"
+"                <p style=\"margin: 0px; padding: 0px; font-size: 13px;\">\n"
+"    Spettabile <t t-out=\"object.partner_id.name or ''\">Brandon Freeman</t>"
+"\n"
+"    <t t-if=\"object.partner_id.parent_id\">\n"
+"        (<t t-out=\"object.partner_id.parent_id.name or ''\">Azure Interior</"
+"t>)\n"
+"    </t>\n"
+"    <br/><br/>\n"
+"    trova in allegato la fattura da <t t-out=\"object.company_id.name or "
+"''\">YourCompany</t>.\n"
+"    <br/><br/>\n"
+"    Per ogni dubbio non esiti a contattarci.\n"
+"    <br/><br/>\n"
+"    Cordiali saluti,\n"
+"    <t t-if=\"not is_html_empty(env.user.signature)\">\n"
+"                    <br/>\n"
+"                    <br/>\n"
+"                    <t t-out=\"env.user.signature or ''\"/>\n"
+"                </t>\n"
+"</p>\n"
+"            </div>\n"
+"        "
 
 #. module: account_billing
 #: model_terms:ir.ui.view,arch_db:account_billing.report_billing_document
@@ -128,6 +172,7 @@ msgstr ""
 "soglia saranno elencate nelle righe di fatturazione"
 
 #. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_account_billing__amount_due
 #: model:ir.model.fields,field_description:account_billing.field_account_billing_line__amount_residual
 msgid "Amount Due"
 msgstr "Importo dovuto"
@@ -141,6 +186,16 @@ msgstr "Sicuri di annullare questo documento?"
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__message_attachment_count
 msgid "Attachment Count"
 msgstr "Conteggio allegati"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid ""
+"Batch sending of billings is unavailable. Please ask your administrator to "
+"activate the scheduled action '%s'."
+msgstr ""
+"L'invio in blocco delle fatture non è disponibile. Si prega di chiedere "
+"all'amministratore di attivare l'azione pianificata '%s'."
 
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__billing_line_ids
@@ -172,6 +227,7 @@ msgstr "Fatturazione fatturata"
 #: model:ir.model.fields,field_description:account_billing.field_account_billing_line__billing_id
 #: model:ir.ui.menu,name:account_billing.menu_action_customer_billing
 #: model:ir.ui.menu,name:account_billing.menu_action_supplier_billing
+#: model:mail.template,name:account_billing.email_template_billing
 #: model_terms:ir.ui.view,arch_db:account_billing.report_billing_document
 msgid "Billing"
 msgstr "Fatturazione"
@@ -179,8 +235,8 @@ msgstr "Fatturazione"
 #. module: account_billing
 #. odoo-python
 #: code:addons/account_billing/models/account_billing.py:0
-msgid "Billing %s is cancelled"
-msgstr "La fatturazione %s è annullata"
+msgid "Billing %(name)s is cancelled"
+msgstr "La fatturazione %(name)s è annullata"
 
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__date
@@ -210,6 +266,12 @@ msgstr ""
 "ancora nello stato \"Registrate\" o \"Pagate\"."
 
 #. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_res_company__billing_email_template_id
+#: model:ir.model.fields,field_description:account_billing.field_res_config_settings__billing_email_template_id
+msgid "Billing email template"
+msgstr "Modello email fatturazione"
+
+#. module: account_billing
 #. odoo-python
 #: code:addons/account_billing/models/account_billing.py:0
 msgid "Billing is billed."
@@ -228,10 +290,46 @@ msgid "Billing lines that reference this invoice"
 msgstr "Righe pagamento che si riferiscono a questa fattura"
 
 #. module: account_billing
+#: model:ir.actions.server,name:account_billing.ir_cron_account_billing_send_ir_actions_server
+msgid "Billing: send billings by email"
+msgstr "Fatturazione: invia fatturazione per e-mail"
+
+#. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_bank_statement_line__billing_ids
 #: model:ir.model.fields,field_description:account_billing.field_account_move__billing_ids
 msgid "Billings"
 msgstr "Fatturazioni"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Billings are being sent in the background."
+msgstr "La fatturazione è inviata in background."
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Billings in error"
+msgstr "Fatturazione in errore"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Billings sent"
+msgstr "Fatturazione inviata"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Billings sent successfully."
+msgstr "Fatturazione inviata con successo."
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+#: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
+msgid "Bills"
+msgstr "Fatture"
 
 #. module: account_billing
 #: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
@@ -249,20 +347,42 @@ msgid "Cancelled Billing"
 msgstr "Fatturazione annullata"
 
 #. module: account_billing
+#: model_terms:ir.ui.view,arch_db:account_billing.view_invoice_config_settings
+msgid "Choose Billing Email Template"
+msgstr "Scegli modello e-mail fattura"
+
+#. module: account_billing
 #: model_terms:ir.actions.act_window,help:account_billing.action_customer_billing
 #: model_terms:ir.actions.act_window,help:account_billing.action_supplier_billing
 msgid "Click to register a new billing."
 msgstr "Fare clic per registrare una nuova fatturazione."
 
 #. module: account_billing
+#: model:ir.model,name:account_billing.model_res_company
+msgid "Companies"
+msgstr "Aziende"
+
+#. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__company_id
+#: model_terms:ir.ui.view,arch_db:account_billing.view_billing_search
 msgid "Company"
 msgstr "Azienda"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Compose Email"
+msgstr "Componi e-mail"
 
 #. module: account_billing
 #: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
 msgid "Compute items"
 msgstr "Calcola elementi"
+
+#. module: account_billing
+#: model:ir.model,name:account_billing.model_res_config_settings
+msgid "Config Settings"
+msgstr "Impostazioni configurazione"
 
 #. module: account_billing
 #: model:ir.model.fields,help:account_billing.field_account_billing__invoice_related_count
@@ -295,7 +415,6 @@ msgstr "Valuta"
 
 #. module: account_billing
 #: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_tree
-#: model_terms:ir.ui.view,arch_db:account_billing.view_billing_search
 msgid "Customer"
 msgstr "Cliente"
 
@@ -307,6 +426,9 @@ msgstr "Fattura cliente"
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__display_name
 #: model:ir.model.fields,field_description:account_billing.field_account_billing_line__display_name
+#: model:ir.model.fields,field_description:account_billing.field_account_move__display_name
+#: model:ir.model.fields,field_description:account_billing.field_res_company__display_name
+#: model:ir.model.fields,field_description:account_billing.field_res_config_settings__display_name
 msgid "Display Name"
 msgstr "Nome visualizzato"
 
@@ -356,11 +478,6 @@ msgid "Followers (Partners)"
 msgstr "Seguito da (partner)"
 
 #. module: account_billing
-#: model_terms:ir.ui.view,arch_db:account_billing.view_billing_search
-msgid "Group By"
-msgstr "Raggruppa per"
-
-#. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__has_message
 msgid "Has Message"
 msgstr "Ha un messaggio"
@@ -368,6 +485,9 @@ msgstr "Ha un messaggio"
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__id
 #: model:ir.model.fields,field_description:account_billing.field_account_billing_line__id
+#: model:ir.model.fields,field_description:account_billing.field_account_move__id
+#: model:ir.model.fields,field_description:account_billing.field_res_company__id
+#: model:ir.model.fields,field_description:account_billing.field_res_config_settings__id
 msgid "ID"
 msgstr "ID"
 
@@ -394,14 +514,31 @@ msgid "Invoice paid already."
 msgstr "Fattura già pagata."
 
 #. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
 #: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
 msgid "Invoices"
 msgstr "Fatture"
 
 #. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_account_billing__is_being_sent
+msgid "Is Being Sent"
+msgstr "Inviata"
+
+#. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__message_is_follower
 msgid "Is Follower"
 msgstr "Segue"
+
+#. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_account_billing__is_sent
+msgid "Is Sent"
+msgstr "Spedita"
+
+#. module: account_billing
+#: model:ir.model.fields,help:account_billing.field_account_billing__is_sent
+msgid "It indicates that the billing has been sent by email."
+msgstr "Indica che la fattura è stata inviata per e-mail."
 
 #. module: account_billing
 #: model:ir.model,name:account_billing.model_account_move
@@ -419,15 +556,6 @@ msgstr "Ultimo aggiornamento di"
 #: model:ir.model.fields,field_description:account_billing.field_account_billing_line__write_date
 msgid "Last Updated on"
 msgstr "Ultimo aggiornamento il"
-
-#. module: account_billing
-#: model:ir.model.fields,help:account_billing.field_account_billing__company_id
-msgid ""
-"Leave this field empty if this route is shared             between all "
-"companies"
-msgstr ""
-"Lasciare questo campo vuoto se questo percorso              è condiviso tra "
-"tutte le aziende"
 
 #. module: account_billing
 #: model_terms:ir.actions.act_window,help:account_billing.action_supplier_billing
@@ -454,6 +582,11 @@ msgstr "Registrazione"
 #: model_terms:ir.ui.view,arch_db:account_billing.view_billing_search
 msgid "Name"
 msgstr "Nome"
+
+#. module: account_billing
+#: model_terms:ir.ui.view,arch_db:account_billing.view_billing_search
+msgid "Not Sent"
+msgstr "Non inviata"
 
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__narration
@@ -493,12 +626,31 @@ msgid "Number of messages with delivery error"
 msgstr "Numero di messaggi con errore di consegna"
 
 #. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "One or more billings couldn't be sent."
+msgstr "Non è stato possibile spedire una o più fatture."
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Only validated billings can be sent by email."
+msgstr "Solo le fatture validate possono essere spedite per e-mail."
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Open"
+msgstr "Apri"
+
+#. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing_line__origin
 msgid "Origin"
 msgstr "Origine"
 
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__partner_id
+#: model_terms:ir.ui.view,arch_db:account_billing.view_billing_search
 msgid "Partner"
 msgstr "Partner"
 
@@ -516,6 +668,18 @@ msgstr "Pagamenti completi"
 #: model:ir.model.fields,field_description:account_billing.field_account_billing_line__payment_state
 msgid "Payment Status"
 msgstr "Stato pagamento"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Please configure the Billing Email Template in the settings."
+msgstr "Configurare il modello e-mail fattura nelle impostazioni."
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_move.py:0
+msgid "Please select invoices with same company"
+msgstr "Selezionare fatture della stessa azienda"
 
 #. module: account_billing
 #. odoo-python
@@ -547,9 +711,58 @@ msgid "Search Billings"
 msgstr "Cerca fatturazioni"
 
 #. module: account_billing
+#: model_terms:ir.ui.view,arch_db:account_billing.view_invoice_config_settings
+msgid ""
+"Select the email template used for billing emails. If left empty, the "
+"default template provided by the Billing Process module will be used."
+msgstr ""
+"Selezionare il modello di e-mail da utilizzare per le comunicazioni di "
+"fatturazione. Se lasciato vuoto, verrà utilizzato il modello predefinito "
+"fornito dal modulo Processo di fatturazione."
+
+#. module: account_billing
+#: model:ir.actions.server,name:account_billing.action_account_billing_send_from_list
+#: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
+msgid "Send by Email"
+msgstr "Invia per e-mail"
+
+#. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_account_billing__sending_data
+msgid "Sending Data"
+msgstr "Invio dati"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Sending billings"
+msgstr "Invio fatturazione"
+
+#. module: account_billing
+#: model:mail.template,description:account_billing.email_template_billing
+msgid "Sent billing to customer/vendor"
+msgstr "Fattura inviata al cliente/fornitore"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Sent billings"
+msgstr "Fatturazione inviata"
+
+#. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_account_billing_line__sequence
+msgid "Sequence"
+msgstr "Sequenza"
+
+#. module: account_billing
 #: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
 msgid "Set to Draft"
 msgstr "Imposta a bozza"
+
+#. module: account_billing
+#. odoo-python
+#: code:addons/account_billing/models/account_billing.py:0
+msgid "Some billings are already being sent."
+msgstr "Alcune fatture sono già state inviate."
 
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__state
@@ -559,9 +772,30 @@ msgid "Status"
 msgstr "Stato"
 
 #. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_account_billing__amount_tax
+msgid "Tax Amount"
+msgstr "Importo imposta"
+
+#. module: account_billing
+#: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_tree
+msgid "Tax Excluded"
+msgstr "Imposta inclusa"
+
+#. module: account_billing
+#: model:ir.model.fields,help:account_billing.field_res_company__billing_email_template_id
+#: model:ir.model.fields,help:account_billing.field_res_config_settings__billing_email_template_id
+msgid "Template used for sending billing emails."
+msgstr "Modello usato per inviare e-mail fatturazione."
+
+#. module: account_billing
 #: model:ir.model.fields,help:account_billing.field_account_billing_line__origin
 msgid "The document(s) that generated the invoice."
 msgstr "Documento(i) che ha generato la fattura."
+
+#. module: account_billing
+#: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
+msgid "This billing is being sent in the background."
+msgstr "Questa fatturazione è inviata in background."
 
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing__threshold_date
@@ -577,8 +811,8 @@ msgstr "Tipo soglia data"
 #. module: account_billing
 #. odoo-python
 #: code:addons/account_billing/models/account_billing.py:0
-msgid "Threshold Date cannot be later than the %s in lines"
-msgstr "La data soglia non può essere dopo il %s nelle righe"
+msgid "Threshold Date cannot be later than the %(date_type)s in lines"
+msgstr "La data limite non può essere superiore alla %(date_type)s nelle righe"
 
 #. module: account_billing
 #: model:ir.model.fields,field_description:account_billing.field_account_billing_line__amount_total
@@ -586,6 +820,7 @@ msgid "Total"
 msgstr "Totale"
 
 #. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_account_billing__amount_total
 #: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
 msgid "Total Amount"
 msgstr "Importo totale"
@@ -601,13 +836,17 @@ msgid "Type of invoice"
 msgstr "Tipo di fattura"
 
 #. module: account_billing
+#: model:ir.model.fields,field_description:account_billing.field_account_billing__amount_untaxed
+msgid "Untaxed Amount"
+msgstr "Imponibile"
+
+#. module: account_billing
 #: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_form
 msgid "Validate"
 msgstr "Valida"
 
 #. module: account_billing
-#: model_terms:ir.ui.view,arch_db:account_billing.view_account_supplier_billing_tree
-#: model_terms:ir.ui.view,arch_db:account_billing.view_billing_search
+#: model_terms:ir.ui.view,arch_db:account_billing.view_account_billing_tree
 msgid "Vendor"
 msgstr "Fornitore"
 
@@ -637,3 +876,28 @@ msgstr "Non si può riportare a bozza una fattura che è stata fatturata."
 #: code:addons/account_billing/models/account_billing.py:0
 msgid "You need to add a line before validate."
 msgstr "Bisogna inserire una riga prima di validare."
+
+#. module: account_billing
+#: model:mail.template,subject:account_billing.email_template_billing
+msgid "{{ object.company_id.name }} Billing (Ref {{ object.name or 'n/a' }})"
+msgstr ""
+"{{ object.company_id.name }} Fatturazione (Rif {{ object.name or 'n/a' }})"
+
+#~ msgid "%s"
+#~ msgstr "%s"
+
+#~ msgid "Billing %s is cancelled"
+#~ msgstr "La fatturazione %s è annullata"
+
+#~ msgid "Group By"
+#~ msgstr "Raggruppa per"
+
+#~ msgid ""
+#~ "Leave this field empty if this route is shared             between all "
+#~ "companies"
+#~ msgstr ""
+#~ "Lasciare questo campo vuoto se questo percorso              è condiviso "
+#~ "tra tutte le aziende"
+
+#~ msgid "Threshold Date cannot be later than the %s in lines"
+#~ msgstr "La data soglia non può essere dopo il %s nelle righe"

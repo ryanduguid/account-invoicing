@@ -425,7 +425,7 @@ class TestAccountMovePricelist(common.TransactionCase):
         self.invoice.button_update_prices_from_pricelist()
         invoice_line = self.invoice.invoice_line_ids[:1]
         self.assertEqual(invoice_line.price_unit, 100.00)
-        self.assertEqual(invoice_line.discount, 10.00)
+        self.assertAlmostEqual(invoice_line.discount, 10.00)
 
     def test_06_account_invoice_pricelist_with_discount_secondary_currency(self):
         self.env.user.write({"group_ids": [(5, self.group_discount.id)]})
