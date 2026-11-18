@@ -64,7 +64,8 @@ def write_report(root, data_file, output):
         raise RuntimeError("Native Python coverage is missing")
     collector.get_data().touch_files(sources)
     collector.save()
-    collector.xml_report(outfile=output)
+    # Measured names with no file, such as Odoo server actions, are not source.
+    collector.xml_report(morfs=sources, outfile=output)
 
 
 if __name__ == "__main__":
