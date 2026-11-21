@@ -12,6 +12,10 @@
 
 account-invoicing
 
+**Fork checks**
+
+[![Fork tests](https://github.com/ryanduguid/account-invoicing/actions/workflows/test.yml/badge.svg?branch=19.0)](https://github.com/ryanduguid/account-invoicing/actions/workflows/test.yml?query=branch%3A19.0)
+
 <!-- /!\ do not modify below this line -->
 
 <!-- prettier-ignore-start -->
