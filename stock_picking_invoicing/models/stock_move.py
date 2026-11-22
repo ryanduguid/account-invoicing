@@ -32,7 +32,6 @@ class StockMove(models.Model):
 
         product = self.mapped("product_id")
         product.ensure_one()
-        sum(self.mapped("product_uom_qty"))
         product_uom = self.mapped("product_uom")
         company = self[0].picking_id.company_id if self else False
         # Only in the cases the stock.move has linked to Sale or

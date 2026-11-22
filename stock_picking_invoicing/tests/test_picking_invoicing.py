@@ -634,6 +634,41 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         self.assertEqual(invoices.invoice_line_ids.quantity, 2)
         self.assertEqual(invoices.amount_total, 50.0)
 
+    def test_grouped_invoice_lines_net_reverse_stock_movements(self):
+        wizard = self.env["stock.invoice.onshipping"]
+        cases = (
+            ("out_invoice", self.stock_location, self.customers_location),
+            ("out_refund", self.customers_location, self.stock_location),
+            ("in_invoice", self.suppliers_location, self.stock_location),
+            ("in_refund", self.stock_location, self.suppliers_location),
+        )
+        for move_type, source, destination in cases:
+            with self.subTest(move_type=move_type):
+                moves = self.move_model.create(
+                    [
+                        {
+                            "product_id": self.product_price_test.id,
+                            "product_uom": self.product_price_test.uom_id.id,
+                            "product_uom_qty": quantity,
+                            "location_id": origin.id,
+                            "location_dest_id": target.id,
+                            "price_unit": 25,
+                        }
+                        for quantity, origin, target in (
+                            (5, source, destination),
+                            (2, destination, source),
+                        )
+                    ]
+                )
+                invoice_values = {
+                    "move_type": move_type,
+                    "partner_id": self.partner.id,
+                }
+                invoice = self.invoice_model.new(invoice_values)
+                values = wizard._get_invoice_line_values(moves, invoice_values, invoice)
+                self.assertEqual(values["quantity"], 3)
+                self.assertEqual(values["price_unit"], 25)
+
     def test_default_group_skips_picking_without_billable_moves(self):
         skipped = self._create_untaxed_customer_delivery(2)
         skipped.move_ids.write({"invoice_state": "none"})
@@ -1498,13 +1533,10 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         self.assertEqual(picking.state, "done")
         invoice = self.create_invoice_wizard(picking)
         self.assertEqual(picking.invoice_state, "invoiced")
-        for inv_line in invoice.invoice_line_ids:
-            if inv_line.product_id == self.product_price_test:
-                self.assertEqual(
-                    inv_line.price_unit,
-                    1234.0,
-                    "Error to get sale Price from Price List.",
-                )
+        lines = invoice.invoice_line_ids.filtered(
+            lambda line: line.product_id == self.product_price_test
+        )
+        self.assertEqual(lines.mapped("price_unit"), [1234.0])
 
     def test_picking_extra_vals(self):
         """Test Picking Extra Vals"""
