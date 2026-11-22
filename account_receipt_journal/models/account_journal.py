@@ -12,8 +12,7 @@ class AccountJournal(models.Model):
 
     def _get_move_action_context(self):
         res = super()._get_move_action_context()
-        ctx = self.env.context.copy()
-        journal = self or self.browse(ctx["default_journal_id"])
+        journal = self or self.browse(res.get("default_journal_id"))
         if not journal or not journal.receipts:
             return res
         if journal.type == "sale":
