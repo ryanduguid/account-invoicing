@@ -506,16 +506,15 @@ class StockInvoiceOnshipping(models.TransientModel):
                 invoice, invoice_values = self._build_invoice_values_from_pickings(
                     pickings
                 )
-                lines = [(5, 0, {})]
-                line_values = False
+                lines = []
                 for moves in moves_list:
                     line_values = self._get_invoice_line_values(
                         moves, invoice_values, invoice
                     )
                     if line_values:
                         lines.append((0, 0, line_values))
-                if line_values:  # Only create the invoice if it has lines
-                    invoice_values["invoice_line_ids"] = lines
+                if lines:
+                    invoice_values["invoice_line_ids"] = [(5, 0, {}), *lines]
                     # Necessary inform line_ids with empty list to avoid error
                     # addons/account/models/account_move.py", line 2251,
                     # in _sanitize_vals
