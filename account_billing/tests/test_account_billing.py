@@ -8,7 +8,7 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import Command, fields
 from odoo.exceptions import UserError, ValidationError
-from odoo.tests.common import TransactionCase, tagged
+from odoo.tests.common import TransactionCase, new_test_user, tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
@@ -498,6 +498,40 @@ class TestAccountBilling(TransactionCase):
         billing.validate_billing()
         return billing
 
+    def test_create_billing_reports_that_draft_invoices_cannot_be_billed(self):
+        invoice = self.create_invoice(amount=100)
+        invoice.button_draft()
+
+        with self.assertRaisesRegex(UserError, "Only posted invoices"):
+            invoice.action_create_billing()
+        self.assertFalse(invoice.billing_ids)
+
+    def test_send_billing_refuses_a_missing_template(self):
+        billing = self._create_billed_billing(self.partner_default)
+        billing.company_id.billing_email_template_id = False
+        self.env["ir.model.data"].search(
+            [
+                ("module", "=", "account_billing"),
+                ("name", "=", "email_template_billing"),
+            ]
+        ).unlink()
+
+        with self.assertRaisesRegex(UserError, "configure the Billing Email Template"):
+            billing.action_billing_send()
+        self.assertFalse(billing.is_sent)
+
+    def test_batch_send_refuses_an_inactive_cron_without_queueing(self):
+        billings = self._create_billed_billing(
+            self.partner_default
+        ) | self._create_billed_billing(self.partner_other)
+        self.env.ref(
+            "account_billing.ir_cron_account_billing_send"
+        ).sudo().active = False
+
+        with self.assertRaisesRegex(UserError, "activate the scheduled action"):
+            billings.action_billing_send()
+        self.assertFalse(billings.filtered("is_being_sent"))
+
     def test_action_billing_send_batch(self):
         """Several billings are queued and sent by the cron, not in the request."""
         partners = self.env["res.partner"].create(
@@ -532,6 +566,46 @@ class TestAccountBilling(TransactionCase):
             self.assertTrue(
                 message.attachment_ids.name.startswith(f"BILL-{billing.name}.")
             )
+
+    def test_billing_cron_clears_failed_delivery_and_notifies_the_author(self):
+        billings = self._create_billed_billing(
+            self.partner_default
+        ) | self._create_billed_billing(self.partner_other)
+        author = new_test_user(
+            self.env, login="billing_sender", groups="account.group_account_invoice"
+        )
+        billings.with_user(author).action_billing_send()
+
+        cron = self.env["ir.cron"]
+        partner = author.partner_id
+        with (
+            patch.object(
+                type(self.billing_model),
+                "_send_billing_email",
+                autospec=True,
+                side_effect=RuntimeError("synthetic delivery failure"),
+            ) as send,
+            patch.object(type(partner), "_bus_send", autospec=True) as notify,
+            patch.object(type(cron), "_commit_progress") as progress,
+            self.assertLogs("odoo.addons.account_billing", level="ERROR") as logged,
+        ):
+            self.billing_model._cron_account_billing_send()
+            self.billing_model._cron_account_billing_send()
+
+        attempted = [call.args[0] for call in send.call_args_list]
+        self.assertCountEqual([billing.id for billing in attempted], billings.ids)
+        self.assertTrue(all(billing.env.user == author for billing in attempted))
+        self.assertEqual(len(logged.records), 2)
+        notify.assert_called_once()
+        recipient, channel, message = notify.call_args.args
+        self.assertEqual(recipient, partner)
+        self.assertEqual(channel, "account_notification")
+        self.assertEqual(message["type"], "warning")
+        self.assertEqual(message["action_button"]["model"], "account.billing")
+        self.assertCountEqual(message["action_button"]["res_ids"], billings.ids)
+        progress.assert_called_once_with(2, remaining=0)
+        self.assertFalse(billings.filtered("is_being_sent"))
+        self.assertFalse(billings.filtered("is_sent"))
 
 
 @tagged("post_install", "-at_install")
