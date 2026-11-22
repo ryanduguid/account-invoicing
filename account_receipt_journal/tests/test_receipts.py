@@ -168,6 +168,23 @@ class TestReceipts(AccountTestInvoicingCommon):
         self.assertEqual(action["context"]["default_move_type"], "in_receipt")
         self.assertEqual(action["domain"], [("move_type", "=", "in_receipt")])
 
+    def test_new_move_uses_the_upstream_default_journal(self):
+        journal_model = self.env["account.journal"].with_context({})
+        context = journal_model.action_create_new()["context"]
+        self.assertFalse(context["default_journal_id"])
+        self.assertEqual(context["default_move_type"], "entry")
+
+        for journal, move_type in (
+            (self.out_receipt_journal, "out_receipt"),
+            (self.in_receipt_journal, "in_receipt"),
+        ):
+            with self.subTest(move_type=move_type):
+                action = journal_model.with_context(
+                    default_journal_id=journal.id
+                ).action_create_new()
+                self.assertEqual(action["context"]["default_journal_id"], journal.id)
+                self.assertEqual(action["context"]["default_move_type"], move_type)
+
     def test_ordinary_journal_dashboard_keeps_invoice_defaults(self):
         for journal_type, move_type in (
             ("sale", "out_invoice"),
