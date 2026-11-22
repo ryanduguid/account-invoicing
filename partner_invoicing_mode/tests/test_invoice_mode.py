@@ -10,6 +10,7 @@ from odoo.fields import Domain
 from odoo.tests import Form
 
 from odoo.addons.queue_job.tests.common import trap_jobs
+from odoo.addons.sale.models.sale_order import SaleOrder as CoreSaleOrder
 
 from ..models.res_partner import ResPartner
 from .common import CommonPartnerInvoicingMode
@@ -85,6 +86,48 @@ class TestInvoiceMode(CommonPartnerInvoicingMode):
         self.assertEqual(1, len(self.so1.invoice_ids))
         # Check the invoice is the same
         self.assertEqual(self.so2.invoice_ids, self.so1.invoice_ids)
+
+    def test_grouping_does_not_mutate_keys_supplied_by_sale(self):
+        keys = ["company_id", "partner_id", "currency_id"]
+        with mock.patch.object(
+            CoreSaleOrder, "_get_invoice_grouping_keys", return_value=keys
+        ):
+            grouping = self.SaleOrder._get_invoice_grouping_keys()
+        self.assertEqual(
+            grouping,
+            ["company_id", "currency_id", "partner_invoice_id", "payment_term_id"],
+        )
+        self.assertEqual(keys, ["company_id", "partner_id", "currency_id"])
+
+    def test_grouping_preserves_keys_an_extension_already_provides(self):
+        expected = [
+            "company_id",
+            "payment_term_id",
+            "fiscal_position_id",
+            "partner_invoice_id",
+            "currency_id",
+        ]
+        keys = expected.copy()
+        with mock.patch.object(
+            CoreSaleOrder, "_get_invoice_grouping_keys", return_value=keys
+        ):
+            grouping = self.SaleOrder._get_invoice_grouping_keys()
+        self.assertEqual(grouping, expected)
+        self.assertEqual(keys, expected)
+        self.assertIsNot(grouping, keys)
+
+    def test_invoicing_cron_with_no_companies_skips_invoice_generation(self):
+        model = type(self.SaleOrder)
+        with (
+            mock.patch.object(
+                model,
+                "_get_companies_standard_invoicing",
+                return_value=self.env["res.company"],
+            ),
+            mock.patch.object(model, "generate_invoices") as generate,
+        ):
+            self.SaleOrder.cron_generate_standard_invoices()
+        generate.assert_not_called()
 
     def test_invoicing_standard_no_grouping(self):
         # Confirm and deliver both sale orders

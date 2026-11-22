@@ -59,7 +59,7 @@ class SaleOrder(models.Model):
     ):
         """
         Generate invoices in job queues depending on the invoicing
-        mode (stadndard by default)
+        mode (standard by default)
         """
         if companies is None:
             companies = self.env.company
@@ -85,7 +85,7 @@ class SaleOrder(models.Model):
         We override the standard (in sale) grouping function in order to
         add some missing keys. We remove also the partner_id key.
         """
-        keys = super()._get_invoice_grouping_keys()
+        keys = list(super()._get_invoice_grouping_keys())
         if "partner_invoice_id" not in keys:
             keys.append("partner_invoice_id")
         if "payment_term_id" not in keys:
