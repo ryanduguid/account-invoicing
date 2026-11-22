@@ -388,6 +388,23 @@ class TestAccountBilling(TransactionCase):
         )
         self.assertTrue(billing_with_sudo, "Sudo should bypass company record rule")
 
+    def test_customer_and_vendor_documents_create_separate_billings(self):
+        invoice = self.create_invoice(amount=75)
+        bill = self.create_invoice(amount=25, invoice_type="in_invoice")
+
+        action = (invoice | bill).action_create_billing()
+
+        self.assertEqual(action["view_mode"], "list,form")
+        billings = self.billing_model.search(action["domain"])
+        self.assertEqual(len(billings), 2)
+        self.assertEqual(
+            {
+                billing.bill_type: billing.billing_line_ids.move_id
+                for billing in billings
+            },
+            {"out_invoice": invoice, "in_invoice": bill},
+        )
+
     def test_9_check_move_button_draft(self):
         self.assertEqual(self.inv_1.state, "posted")
         action = self.inv_1.action_create_billing()

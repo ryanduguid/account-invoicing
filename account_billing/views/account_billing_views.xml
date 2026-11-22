@@ -9,6 +9,7 @@
                 edit="false"
             >
                 <field name="name" />
+                <field name="bill_type" column_invisible="context.get('bill_type')" />
                 <field
                     name="partner_id"
                     column_invisible="context.get('bill_type') != 'out_invoice'"

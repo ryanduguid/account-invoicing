@@ -77,7 +77,9 @@ class AccountMove(models.Model):
                 )
             )
 
-        billing = self._create_billing(partner)
+        billing = self.env["account.billing"]
+        for moves in self.grouped(lambda move: move._get_billing_type()).values():
+            billing |= moves._create_billing(partner)
 
         action = {
             "name": self.env._("Billing"),
