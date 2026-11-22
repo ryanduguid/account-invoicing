@@ -93,7 +93,9 @@ class AccountMove(models.Model):
         for field in fields:
             field_val = getattr(br, field)
             if isinstance(field_val, dict):
-                field_val = str(field_val)
+                field_val = repr(
+                    dict(sorted(field_val.items(), key=lambda entry: repr(entry[0])))
+                )
             elif isinstance(field_val, models.Model):
                 field_val = tuple(sorted(field_val.ids))
             list_key.append((field, field_val))
