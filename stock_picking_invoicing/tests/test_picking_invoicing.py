@@ -1,6 +1,8 @@
 # Copyright (C) 2019-Today: Odoo Community Association (OCA)
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
+from unittest.mock import patch
+
 from odoo import Command, exceptions
 from odoo.tests import Form
 
@@ -596,6 +598,41 @@ class TestPickingInvoicing(TestPickingInvoicingCommon):
         self.assertEqual(picking.state, "done")
         self.assertEqual(picking.invoice_state, "2binvoiced")
         self.assertEqual(picking.move_ids.invoice_state, "none")
+
+    def test_invoice_keeps_valid_lines_when_an_override_skips_the_last_move(self):
+        delivery = self._create_untaxed_customer_delivery(2)
+        skipped = self._create_untaxed_customer_delivery(1)
+        pickings = delivery | skipped
+        wizard_form = Form(
+            self.env["stock.invoice.onshipping"].with_context(
+                active_ids=pickings.ids, active_model=pickings._name
+            )
+        )
+        wizard_form.group = "partner"
+        wizard = wizard_form.save()
+        original = type(wizard)._get_invoice_line_values
+
+        def get_line_or_skip(record, moves, values, invoice):
+            if moves == skipped.move_ids:
+                return False
+            return original(record, moves, values, invoice)
+
+        with patch.object(
+            type(wizard),
+            "_get_invoice_line_values",
+            autospec=True,
+            side_effect=get_line_or_skip,
+        ) as make_line:
+            invoices = wizard._action_generate_invoices()
+
+        self.assertEqual(
+            [call.args[1] for call in make_line.call_args_list],
+            [delivery.move_ids, skipped.move_ids],
+        )
+        self.assertEqual(len(invoices), 1)
+        self.assertEqual(invoices.invoice_line_ids.move_line_ids, delivery.move_ids)
+        self.assertEqual(invoices.invoice_line_ids.quantity, 2)
+        self.assertEqual(invoices.amount_total, 50.0)
 
     def test_default_group_skips_picking_without_billable_moves(self):
         skipped = self._create_untaxed_customer_delivery(2)
