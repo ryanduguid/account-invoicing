@@ -73,8 +73,7 @@ class AccountMove(models.Model):
         if any(move.state != "posted" or move.payment_state == "paid" for move in self):
             raise UserError(
                 self.env._(
-                    "Billing cannot be processed because "
-                    "some invoices are not in the 'Posted' or 'Paid' state already."
+                    "Only posted invoices that are not fully paid can be billed."
                 )
             )
 
