@@ -169,7 +169,8 @@ class TestReceipts(AccountTestInvoicingCommon):
         self.assertEqual(action["domain"], [("move_type", "=", "in_receipt")])
 
     def test_new_move_uses_the_upstream_default_journal(self):
-        journal_model = self.env["account.journal"].with_context({})
+        journal_model = self.env["account.journal"]
+        self.assertNotIn("default_journal_id", journal_model.env.context)
         context = journal_model.action_create_new()["context"]
         self.assertFalse(context["default_journal_id"])
         self.assertEqual(context["default_move_type"], "entry")
