@@ -76,11 +76,14 @@ class ImportHookTests(unittest.TestCase):
                 )
 
     def test_unconfigured_startup_leaves_ordinary_imports_alone(self):
-        with patch.dict(os.environ, {"COVERAGE_PROCESS_CONFIG": ""}):
-            result = self.run_import(19, configured=False)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stderr, "")
-        self.assertFalse(self.receipts.exists())
+        for environment in ({}, {"COVERAGE_PROCESS_CONFIG": ""}):
+            with self.subTest(environment=environment), patch.dict(
+                os.environ, environment
+            ):
+                result = self.run_import(19, configured=False)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, "")
+                self.assertFalse(self.receipts.exists())
 
     def test_a_different_host_major_is_refused_before_installation(self):
         result = self.run_import(19, expected=18)
