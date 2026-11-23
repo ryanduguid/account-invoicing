@@ -275,23 +275,25 @@ class LifecycleTests(unittest.TestCase):
         release = threading.Event()
         write = browser._coverage_write
         request = browser._websocket_request
-        worker = None
+        worker = threading.Thread(
+            target=browser._coverage_binding, args=(BINDING, "{}", 1), daemon=True
+        )
 
         def delayed_write(context, generation, data):
             if threading.current_thread() is not threading.main_thread():
                 started.set()
-                if not release.wait(2):
-                    raise RuntimeError("Test did not release coverage writer")
+                self.assertTrue(release.wait(2), "Test did not release coverage writer")
             return write(context, generation, data)
 
+        def wait_for_worker():
+            worker.join(2)
+            self.assertFalse(worker.is_alive())
+
         def begin_binding(method, *, params):
-            nonlocal worker
             result = request(method, params=params)
             if method == "Runtime.evaluate":
-                worker = threading.Thread(
-                    target=browser._coverage_binding, args=(BINDING, "{}", 1)
-                )
                 worker.start()
+                self.addCleanup(wait_for_worker)
                 self.assertTrue(started.wait(2))
             return result
 
@@ -302,11 +304,20 @@ class LifecycleTests(unittest.TestCase):
                 browser.stop()
         finally:
             release.set()
-            if worker is not None:
-                worker.join(2)
-                self.assertFalse(worker.is_alive())
+        wait_for_worker()
+        self.assertIsNone(browser._coverage_error)
         self.assertTrue(browser.closed)
         self.assertEqual(sum("error" in record for record in self.records()), 1)
+
+    def test_unexpected_browser_shutdown_produces_a_collection_error_receipt(self):
+        browser = self.browser(18)
+        browser._handlers["Runtime.executionContextCreated"]({"id": 1})
+        Browser.stop(browser)
+
+        with self.assertRaisesRegex(AssertionError, "CDP called after shutdown"):
+            browser._coverage_collect()
+
+        self.assertEqual(self.records(), [{"error": "CDP called after shutdown"}])
 
     def test_child_setup_during_collection_cannot_cross_the_completion_cutoff(self):
         for major in (18, 19):
@@ -1082,7 +1093,3 @@ class FrameProxyTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "unsupported auto-attachment"):
                 common.ChromeBrowser(major)
             self.assertTrue(instances[-1].closed)
-
-
-if __name__ == "__main__":
-    unittest.main()

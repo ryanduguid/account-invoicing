@@ -412,7 +412,7 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
                 "partner_id": self.partner_a.id,
                 "order_line": [
                     Command.create({"product_id": product_1.id, "product_uom_qty": 5}),
-                    Command.create({"product_id": product_2.id, "product_uom_qty": 5}),
+                    Command.create({"product_id": product_2.id, "product_uom_qty": 2}),
                 ],
             }
         )
@@ -435,12 +435,9 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         self.assertEqual(len(inv_sale_order), 3)
         self.assertEqual(len(inv_sale_order_2), 3)
         self.assertEqual(len(total_inv_sale_order), 6)
-        for line in sale_order.order_line:
-            self.assertEqual(line.qty_delivered, 3)
-            self.assertEqual(line.qty_invoiced, 3)
-        for line in sale_order_2.order_line:
-            self.assertEqual(line.qty_delivered, 3)
-            self.assertEqual(line.qty_invoiced, 3)
+        for line in (sale_order | sale_order_2).order_line:
+            self.assertEqual(line.qty_delivered, min(line.product_uom_qty, 3))
+            self.assertEqual(line.qty_invoiced, line.qty_delivered)
 
         invoices = (
             sale_order.mapped("order_line.invoice_lines.move_id")[:1]
@@ -455,12 +452,9 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         self.assertEqual(len(inv_sale_order), 3)
         self.assertEqual(len(inv_sale_order_2), 3)
         self.assertEqual(len(total_inv_sale_order), 5)
-        for line in sale_order.order_line:
-            self.assertEqual(line.qty_delivered, 3)
-            self.assertEqual(line.qty_invoiced, 3)
-        for line in sale_order_2.order_line:
-            self.assertEqual(line.qty_delivered, 3)
-            self.assertEqual(line.qty_invoiced, 3)
+        for line in (sale_order | sale_order_2).order_line:
+            self.assertEqual(line.qty_delivered, min(line.product_uom_qty, 3))
+            self.assertEqual(line.qty_invoiced, line.qty_delivered)
 
     def test_callback_updates_each_group_of_merged_sale_invoices(self):
         if "sale.order" not in self.env.registry:
@@ -568,7 +562,7 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
                 "partner_id": self.partner_a.id,
                 "order_line": [
                     Command.create({"product_id": product_1.id, "product_qty": 5}),
-                    Command.create({"product_id": product_2.id, "product_qty": 5}),
+                    Command.create({"product_id": product_2.id, "product_qty": 2}),
                 ],
             }
         )
@@ -593,12 +587,9 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         self.assertEqual(len(inv_purchase_order), 3)
         self.assertEqual(len(inv_purchase_order_2), 3)
         self.assertEqual(len(total_inv_purchase_order), 6)
-        for line in purchase_order.order_line:
-            self.assertEqual(line.qty_received, 3)
-            self.assertEqual(line.qty_invoiced, 3)
-        for line in purchase_order_2.order_line:
-            self.assertEqual(line.qty_received, 3)
-            self.assertEqual(line.qty_invoiced, 3)
+        for line in (purchase_order | purchase_order_2).order_line:
+            self.assertEqual(line.qty_received, min(line.product_qty, 3))
+            self.assertEqual(line.qty_invoiced, line.qty_received)
 
         invoices = inv_purchase_order[:1] | inv_purchase_order_2[:1]
         invoices[:2].do_merge(keep_references=False)
@@ -612,12 +603,9 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         self.assertEqual(len(inv_purchase_order), 3)
         self.assertEqual(len(inv_purchase_order_2), 3)
         self.assertEqual(len(total_inv_purchase_order), 5)
-        for line in purchase_order.order_line:
-            self.assertEqual(line.qty_received, 3)
-            self.assertEqual(line.qty_invoiced, 3)
-        for line in purchase_order_2.order_line:
-            self.assertEqual(line.qty_received, 3)
-            self.assertEqual(line.qty_invoiced, 3)
+        for line in (purchase_order | purchase_order_2).order_line:
+            self.assertEqual(line.qty_received, min(line.product_qty, 3))
+            self.assertEqual(line.qty_invoiced, line.qty_received)
 
     def test_callback_same_purchase_order(self):
         if "purchase.order" not in self.env.registry:
