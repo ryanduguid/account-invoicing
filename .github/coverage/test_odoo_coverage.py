@@ -584,13 +584,11 @@ class LifecycleTests(unittest.TestCase):
                     def release_proxy(
                         method, *, params, request=request, failure=failure
                     ):
+                        self.assertEqual(method, "Target.setAutoAttach")
+                        self.assertFalse(params["autoAttach"])
                         result = request(method, params=params)
-                        if (
-                            method == "Target.setAutoAttach"
-                            and not params["autoAttach"]
-                        ):
-                            if failure == "release":
-                                raise RuntimeError("release failed")
+                        if failure == "release":
+                            raise RuntimeError("release failed")
                         return result
 
                     browser._websocket_request = release_proxy
@@ -1027,15 +1025,16 @@ class FrameProxyTests(unittest.TestCase):
         workers = []
 
         def release_proxy(method, *, params):
-            if method == "Target.setAutoAttach" and not params["autoAttach"]:
-                worker = threading.Thread(
-                    target=self.browser._handlers["Target.detachedFromTarget"],
-                    kwargs={"sessionId": "frame"},
-                )
-                workers.append(worker)
-                worker.start()
-                worker.join(2)
-                self.assertFalse(worker.is_alive(), "Proxy lock blocks CDP receiver")
+            self.assertEqual(method, "Target.setAutoAttach")
+            self.assertFalse(params["autoAttach"])
+            worker = threading.Thread(
+                target=self.browser._handlers["Target.detachedFromTarget"],
+                kwargs={"sessionId": "frame"},
+            )
+            workers.append(worker)
+            worker.start()
+            worker.join(2)
+            self.assertFalse(worker.is_alive(), "Proxy lock blocks CDP receiver")
             return request(method, params=params)
 
         self.browser._websocket_request = release_proxy
@@ -1045,6 +1044,7 @@ class FrameProxyTests(unittest.TestCase):
             for worker in workers:
                 worker.join(2)
                 self.assertFalse(worker.is_alive())
+        self.assertEqual(len(workers), 1)
         self.assertFalse(self.browser._frame_proxy.sessions)
         self.assertTrue(self.browser.closed)
 

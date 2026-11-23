@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 class ImportHookTests(unittest.TestCase):
@@ -75,7 +76,8 @@ class ImportHookTests(unittest.TestCase):
                 )
 
     def test_unconfigured_startup_leaves_ordinary_imports_alone(self):
-        result = self.run_import(19, configured=False)
+        with patch.dict(os.environ, {"COVERAGE_PROCESS_CONFIG": ""}):
+            result = self.run_import(19, configured=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
         self.assertFalse(self.receipts.exists())

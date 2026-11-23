@@ -81,14 +81,11 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         cls.inv_model = cls.env["account.move"]
         cls.wiz = cls.env["invoice.merge"]
 
-    def _get_wizard(self, active_ids, create=False):
-        wiz = self.wiz.with_context(
+    def _get_wizard(self, active_ids):
+        return self.wiz.with_context(
             active_ids=active_ids,
             active_model="account.move",
-        )
-        if create:
-            wiz = wiz.create({})
-        return wiz
+        ).create({})
 
     def test_invoice_merge(self):
         self.assertEqual(len(self.invoice1.invoice_line_ids), 1)
@@ -101,7 +98,7 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         start_inv = self.inv_model.search(invoice_len_args)
         self.assertEqual(len(start_inv), 5)
 
-        wiz = self._get_wizard([self.invoice1.id, self.invoice2.id], create=True)
+        wiz = self._get_wizard([self.invoice1.id, self.invoice2.id])
         action = wiz.merge_invoices()
 
         self.assertLessEqual(
@@ -185,7 +182,7 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         )
         invoices.invoice_line_ids.flush_recordset(["analytic_distribution"])
         invoices.invoice_line_ids.invalidate_recordset(["analytic_distribution"])
-        action = self._get_wizard(invoices.ids, create=True).merge_invoices()
+        action = self._get_wizard(invoices.ids).merge_invoices()
         merged = self.inv_model.search(action["domain"]).filtered(
             lambda invoice: invoice.state == "draft"
         )
@@ -266,34 +263,34 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
     def test_error_check(self):
         """Check"""
         # Different partner
-        wiz = self._get_wizard([self.invoice1.id, self.invoice3.id], create=True)
+        wiz = self._get_wizard([self.invoice1.id, self.invoice3.id])
         self.assertEqual(
             wiz.error_message, "All invoices must have the same: \n- Partner"
         )
 
         # Check with only one invoice
-        wiz = self._get_wizard([self.invoice1.id], create=True)
+        wiz = self._get_wizard([self.invoice1.id])
         self.assertEqual(
             wiz.error_message,
             "Please select multiple invoices to merge in the list view.",
         )
 
         # Check with two different invoice type
-        wiz = self._get_wizard([self.invoice1.id, self.invoice4.id], create=True)
+        wiz = self._get_wizard([self.invoice1.id, self.invoice4.id])
         self.assertEqual(
             wiz.error_message, "All invoices must have the same: \n- Type\n- Journal"
         )
 
         # Check with a canceled invoice
         self.invoice5.button_cancel()
-        wiz = self._get_wizard([self.invoice1.id, self.invoice5.id], create=True)
+        wiz = self._get_wizard([self.invoice1.id, self.invoice5.id])
         self.assertEqual(
             wiz.error_message,
             "All invoices must have the same: \n- Merge-able State (ex : Draft)",
         )
 
         # Check with another company
-        wiz = self._get_wizard([self.invoice1.id, self.invoice6.id], create=True)
+        wiz = self._get_wizard([self.invoice1.id, self.invoice6.id])
         self.assertEqual(
             wiz.error_message, "All invoices must have the same: \n- Journal\n- Company"
         )
