@@ -244,9 +244,10 @@ class TestReceipts(AccountTestInvoicingCommon):
                 self.assertEqual(invoice.journal_id, journal)
 
     def test_explicit_ordinary_journal_redirects_receipts_to_matching_currency(self):
-        currency = self.env.ref("base.EUR")
-        if currency == self.env.company.currency_id:
-            currency = self.env.ref("base.USD")
+        currency = (
+            (self.env.ref("base.EUR") | self.env.ref("base.USD"))
+            - self.env.company.currency_id
+        )[0]
         currency.active = True
         for move_type, journal_type, code in (
             ("out_receipt", "sale", "SFCR"),
