@@ -1,6 +1,8 @@
 # Copyright 2017 Eficent Business and IT Consulting Services S.L.
 #   (http://www.eficent.com)
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
+from unittest.mock import patch
+
 from odoo import Command, fields
 from odoo.tests import tagged
 
@@ -212,6 +214,23 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
                 self.assertEqual(len(allocated), 1)
                 self.assertAlmostEqual(allocated.quantity, quantity)
                 self.assertAlmostEqual(allocated.price_subtotal, subtotal)
+
+    def test_invoice_merge_respects_optional_sum_fields(self):
+        drafts = self.invoice1 | self.invoice2
+        expected_name = self.invoice1.invoice_line_ids.name
+        with patch.object(
+            type(drafts),
+            "_get_sum_fields",
+            return_value=["quantity", "name", "fabricated_optional_amount"],
+        ):
+            merged = drafts.do_merge()
+
+        invoice = drafts.browse(list(merged))
+        self.assertEqual(len(invoice), 1)
+        line = invoice.invoice_line_ids
+        self.assertEqual(len(line), 1)
+        self.assertEqual(line.quantity, 2)
+        self.assertEqual(line.name, expected_name)
 
     def test_invoice_merge_single_invoice(self):
         invoices_info = self.invoice1.do_merge()
