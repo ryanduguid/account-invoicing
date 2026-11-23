@@ -158,10 +158,11 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
         )
         first, second = (str(account.id) for account in accounts)
         matching = {first: 60, second: 40}
+        matching_reordered = {second: 40, first: 60}
         different = {first: 20, second: 80}
         invoices = self.invoice1 | self.invoice2 | self.invoice5
         for invoice, distribution in zip(
-            invoices, (matching, matching, different), strict=True
+            invoices, (matching, matching_reordered, different), strict=True
         ):
             invoice.invoice_line_ids.write(
                 {
@@ -171,6 +172,15 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
                     "analytic_distribution": distribution,
                 }
             )
+        line_model = self.env["account.move.line"]
+        first_line = line_model.new({"analytic_distribution": matching})
+        second_line = line_model.new({"analytic_distribution": matching_reordered})
+        self.assertEqual(list(first_line.analytic_distribution), [first, second])
+        self.assertEqual(list(second_line.analytic_distribution), [second, first])
+        self.assertEqual(
+            invoices.make_key(first_line, ["analytic_distribution"]),
+            invoices.make_key(second_line, ["analytic_distribution"]),
+        )
         invoices.invoice_line_ids.flush_recordset(["analytic_distribution"])
         invoices.invoice_line_ids.invalidate_recordset(["analytic_distribution"])
         action = self._get_wizard(invoices.ids, create=True).merge_invoices()
