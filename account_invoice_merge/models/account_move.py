@@ -189,17 +189,14 @@ class AccountMove(models.Model):
                     # append a new "standalone" line
                     o_line.update(self._get_invoice_line_vals(invoice_line))
 
-        allinvoices = []
-        allnewinvoices = []
         invoices_info = {}
-        old_invoices = self.env["account.move"]
+        merged_invoice_ids = []
         qty_prec = self.env["decimal.precision"].precision_get(
             "Product Unit of Measure"
         )
-        for _invoice_key, (invoice_data, old_ids) in new_invoices.items():
+        for invoice_data, old_ids in new_invoices.values():
             # skip merges with only one invoice
             if len(old_ids) < 2:
-                allinvoices += old_ids or []
                 continue
 
             if remove_empty_invoice_lines:
@@ -218,24 +215,24 @@ class AccountMove(models.Model):
 
             # create the new invoice
             newinvoice = self.with_context(is_merge=True).create(invoice_data)
-            invoices_info.update({newinvoice.id: old_ids})
-            allinvoices.append(newinvoice.id)
-            allnewinvoices.append(newinvoice)
+            invoices_info[newinvoice.id] = old_ids
             # cancel old invoices
             old_invoices = self.env["account.move"].browse(old_ids)
             old_invoices.with_context(is_merge=True).button_cancel()
-        self.merge_callback(invoices_info, old_invoices)
+            merged_invoice_ids.extend(old_ids)
+        self.merge_callback(invoices_info, self.browse(merged_invoice_ids))
         return invoices_info
 
     @staticmethod
     def order_line_update_invoice_lines(todos, all_old_inv_line):
         for todo in todos:
             for line in todo.order_line:
-                invoice_line = line.invoice_lines.filtered(
+                invoice_lines = line.invoice_lines
+                remaining = invoice_lines.filtered(
                     lambda x: x.parent_state != "cancel" or x.id not in all_old_inv_line
                 )
-                if invoice_line:
-                    line.write({"invoice_lines": [Command.set(invoice_line.ids)]})
+                if remaining != invoice_lines:
+                    line.write({"invoice_lines": [Command.set(remaining.ids)]})
 
     @api.model
     def merge_callback(self, invoices_info, old_invoices):
@@ -243,7 +240,7 @@ class AccountMove(models.Model):
         # None if sale is not installed
         # None if purchase is not installed
         if invoices_info:
-            all_old_inv_line = old_invoices.mapped("invoice_line_ids").ids
+            all_old_inv_line = set(old_invoices.invoice_line_ids.ids)
             if "sale.order" in self.env.registry:
                 sale_todos = old_invoices.mapped(
                     "invoice_line_ids.sale_line_ids.order_id"
