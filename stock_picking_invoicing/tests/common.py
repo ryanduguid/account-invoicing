@@ -14,9 +14,6 @@ class TestPickingInvoicingCommon(TransactionCase):
     def _run_picking_onchanges(self, record):
         record._onchange_invoice_state()
 
-    def _run_line_onchanges(self, record):
-        record._onchange_product_id()
-
     def picking_move_state(self, picking):
         self._run_picking_onchanges(picking)
         picking.action_confirm()
