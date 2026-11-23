@@ -204,6 +204,25 @@ class TestReceipts(AccountTestInvoicingCommon):
                 for action in (journal.action_create_new(), journal.open_action()):
                     self.assertEqual(action["context"]["default_move_type"], move_type)
 
+    def test_legacy_receipt_flag_keeps_general_journal_actions(self):
+        journal = self.env["account.journal"].create(
+            {
+                "name": "Miscellaneous receipt setting",
+                "code": "TGEN",
+                "type": "general",
+                "sequence": 99,
+            }
+        )
+        expected_context = journal._get_move_action_context()
+        expected_action = journal.open_action()
+
+        journal.receipts = True
+
+        self.assertEqual(journal._get_move_action_context(), expected_context)
+        action = journal.open_action()
+        self.assertEqual(action["context"], expected_action["context"])
+        self.assertEqual(action["domain"], expected_action["domain"])
+
     def test_ordinary_invoices_cannot_use_receipt_only_journals(self):
         for move_type, receipt_journal in (
             ("out_invoice", self.out_receipt_journal),
