@@ -446,6 +446,52 @@ class TestAccountInvoiceMerge(AccountTestInvoicingCommon):
             self.assertEqual(line.qty_delivered, 3)
             self.assertEqual(line.qty_invoiced, 3)
 
+    def test_callback_updates_each_group_of_merged_sale_invoices(self):
+        if "sale.order" not in self.env.registry:
+            return True
+        products = self.env["product.product"].create(
+            [
+                {"name": name, "list_price": 5.0, "invoice_policy": "delivery"}
+                for name in ("Delivered item", "Offset item")
+            ]
+        )
+        orders = self.env["sale.order"].create(
+            [
+                {
+                    "partner_id": partner.id,
+                    "order_line": [
+                        Command.create({"product_id": product.id, "product_uom_qty": 2})
+                        for product in products
+                    ],
+                }
+                for partner in (self.partner_a, self.partner_b)
+            ]
+        )
+        for order in orders:
+            order.action_confirm()
+            self._add_qty_delivered_and_create_invoice(order)
+            self._add_qty_delivered_and_create_invoice(order)
+        original_invoices = orders.order_line.invoice_lines.move_id
+        self.assertEqual(len(original_invoices), 4)
+        offset_line = orders[0].order_line.filtered_domain(
+            [("product_id", "=", products[1].id)]
+        )
+        offset_line.invoice_lines.sorted("id")[-1].quantity = -1
+
+        merged = original_invoices.do_merge(keep_references=False)
+
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(set(original_invoices.mapped("state")), {"cancel"})
+        self.assertFalse(offset_line.invoice_lines)
+        self.assertEqual(offset_line.qty_invoiced, 0)
+        for order in orders:
+            invoice = order.order_line.invoice_lines.move_id
+            self.assertEqual(len(invoice), 1)
+            self.assertIn(invoice.id, merged)
+            self.assertEqual(invoice.partner_id, order.partner_id)
+            for line in order.order_line - offset_line:
+                self.assertEqual(line.qty_invoiced, 2)
+
     def test_callback_same_sale_order(self):
         if "sale.order" not in self.env.registry:
             return True
